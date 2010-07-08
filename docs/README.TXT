@@ -1,18 +1,19 @@
 FIGlet project home page: http://www.figlet.org/
 You can download FIGlet fonts from: ftp://ftp.figlet.org/pub/figlet/fonts/
-Project home page (Russian): http://bolk.exler.ru/files/figlet/
+Project home page (Russian): http://bolknote.ru/files/figlet/
 
 Notes:
-1. There is no support of vertical smushing.
+1. There are no support flc and vertical smushing.
 2. But horizontal smushing is supported.
 3. Default character (0x00) is supported.
 4. German symbols are supported.
-5. It is supported pseudo-Unicode as %uHHHH, HHHH - a code of a character.
+5. It is supported Unicode as %uHHHH, HHHH - a hex code of a character (UCS-2).
 7. RTL and LTR text directions are suppoted.
 8. Windows and Unix font formats are supported.
 9. Incomplete fonts are supported (for example dwhistled.flf).
-10. GZip-compressed font supported (if zlib extension was installed)
-
+10. Gzipped fonts supported as .flf.gz (zlib PHP extension required)
+11. ZIPed fonts supported (ZIP PHP extension required)
+                                                                              `
 Usage:
 
     include_once 'Text/Figlet.php';

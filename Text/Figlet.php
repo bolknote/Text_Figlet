@@ -3,13 +3,13 @@
 /**
 * ASCII art text creation
 *
-* Project home page (Russian): http://bolk.exler.ru/files/figlet/
+* Project home page (Russian): http://bolknote.ru/files/figlet/
 *
 * PHP Version 4
 *
 * @category Text
 * @package  Text_Figlet
-* @author   Evgeny Stepanischev <se@lixil.ru>
+* @author   Evgeny Stepanischev <imbolk@gmail.com>
 * @author   Christian Weiske <cweiske@php.net>
 * @license  http://www.php.net/license PHP License
 * @version  CVS: $Id$
@@ -20,13 +20,13 @@ require_once 'PEAR.php';
 /**
 * ASCII art text creation
 *
-* Project home page (Russian): http://bolk.exler.ru/files/figlet/
+* Project home page (Russian): http://bolknote.ru/files/figlet/
 *
 * PHP Version 4
 *
 * @category Text
 * @package  Text_Figlet
-* @author   Evgeny Stepanischev <se@lixil.ru>
+* @author   Evgeny Stepanischev <imbolk@gmail.com>
 * @author   Christian Weiske <cweiske@php.net>
 * @license  http://www.php.net/license PHP License
 * @link     http://pear.php.net/package/Text_Figlet
@@ -87,6 +87,15 @@ class Text_Figlet
      */
     var $smush_flag;
 
+    /**
+     * Comment lines buffer
+     *
+     * @var string
+     *
+     * @access public
+     */
+
+    var $font_comment;
 
 
     /**
@@ -122,6 +131,8 @@ class Text_Figlet
             }
         }
 
+        $this->font_comment = '';
+
         // If Gzip compressed font
         if (substr($filename, -3, 3) == '.gz') {
             $filename   = 'compress.zlib://' . $filename;
@@ -140,9 +151,33 @@ class Text_Figlet
             return PEAR::raiseError('Cannot open figlet font file ' . $filename, 2);
         }
 
-
         if (!$compressed) {
-            flock($fp, LOCK_SH);
+            /* ZIPed font */
+            if (fread($fp, 2) == 'PK') {
+                if (!function_exists('zip_open')) {
+                    return PEAR::raiseError('Cannot load ZIP compressed fonts since'
+                                            . ' ZIP PHP extension is not available.',
+                                            5);                        
+                }
+
+                fclose($fp);
+
+                if (!($fp = zip_open($filename))) {
+                    return PEAR::raiseError('Cannot open figlet font file ' . $filename, 2);
+                }
+
+                $name = zip_entry_name(zip_read($fp));
+                zip_close($fp);
+
+                if (!($fp = fopen('zip://' . realpath($filename) . '#' . $name, 'rb'))) {
+                    return PEAR::raiseError('Cannot open figlet font file ' . $filename, 2);
+                }
+
+                $compressed = true;
+            } else {
+                flock($fp, LOCK_SH);
+                rewind($fp);
+            }
         }
 
         //            flf2a$ 6 5 20 15 3 0 143 229
@@ -167,7 +202,7 @@ class Text_Figlet
         $this->hardblank = substr($this->hardblank, -1, 1);
 
         for ($i = 0; $i < $cmt_count; $i++) {
-            fgets($fp, 2048);
+            $this->font_comment .= fgets($fp, 2048);
         }
 
         // ASCII charcters
@@ -175,7 +210,7 @@ class Text_Figlet
             $this->font[$i] = $this->_char($fp);
         }
 
-        foreach (array(91, 92, 93, 123, 124, 125, 126) as $i) {
+        foreach (array(196, 214, 220, 228, 246, 252, 223) as $i) {
             if ($loadgerman) {
                 $letter = $this->_char($fp);
 
@@ -251,7 +286,7 @@ class Text_Figlet
             // Pseudo Unicode support
             if (substr($str, $i, 2) == '%u') {
                 $lt = hexdec(substr($str, $i+2, 4));
-                $i += 6;
+                $i += 5;
             } else {
                 $lt = ord($str{$i});
             }
