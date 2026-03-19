@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<phpmd-baseline>
+  <violation rule="PHPMD\Rule\UnusedPrivateMethod" file="src/ControlFile.php" method="parse"/>
+  <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/Figlet.php" method="applyHSmushRules"/>
+  <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/Figlet.php" method="vSmushChar"/>
+</phpmd-baseline>

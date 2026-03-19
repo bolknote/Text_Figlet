@@ -1,1 +1,7 @@
 *.tgz
+/vendor/
+/build/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache/
+.DS_Store

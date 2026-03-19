@@ -1,0 +1,3 @@
+# Test control file
+t A B
+t B A

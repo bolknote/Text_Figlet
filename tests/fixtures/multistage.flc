@@ -1,0 +1,4 @@
+# Multi-stage: first lowercase to uppercase, then Q to tilde
+t a-z A-Z
+f
+t Q ~
