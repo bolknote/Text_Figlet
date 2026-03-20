@@ -483,8 +483,8 @@ final class ControlFileTest extends TestCase
     {
         $cf = ControlFile::fromString("gL 0\n");
 
-        $this->assertNotEmpty($cf->apply("\x1b\x6E" . 'A'));
-        $this->assertNotEmpty($cf->apply("\x1b\x6F" . 'A'));
+        $this->assertNotEmpty($cf->apply("\x1bnA"));
+        $this->assertNotEmpty($cf->apply("\x1boA"));
         $this->assertNotEmpty($cf->apply("\x1b\x7E" . chr(0xA1)));
         $this->assertNotEmpty($cf->apply("\x1b\x7D" . chr(0xA1)));
         $this->assertNotEmpty($cf->apply("\x1b\x7C" . chr(0xA1)));
@@ -502,6 +502,6 @@ final class ControlFileTest extends TestCase
     {
         $cf = ControlFile::fromString("gL 0\n");
         $result = $cf->apply("\x1b\x28");
-        $this->assertIsString($result);
+        $this->assertSame('', $result);
     }
 }
