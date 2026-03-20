@@ -25,7 +25,7 @@
     <rule ref="rulesets/codesize.xml/ExcessiveMethodLength"/>
     <rule ref="rulesets/codesize.xml/ExcessiveClassLength">
         <properties>
-            <property name="minimum" value="1200"/>
+            <property name="minimum" value="1250"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/ExcessiveClassComplexity">

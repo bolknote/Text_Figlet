@@ -10,7 +10,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.5.0';
+    public const string VERSION = '2.5.1';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -58,31 +58,28 @@ final class Figlet
 
     private function charLength(string $text): int
     {
-        return $this->isTlf ? mb_strlen($text, 'UTF-8') : strlen($text);
+        return mb_strlen($text, 'UTF-8');
     }
 
     private function charAt(string $text, int $position): string
     {
-        return $this->isTlf ? mb_substr($text, $position, 1, 'UTF-8') : ($text[$position] ?? '');
+        return mb_substr($text, $position, 1, 'UTF-8');
     }
 
     private function charSlice(string $text, int $start, ?int $length = null): string
     {
-        if (!$this->isTlf) {
-            return $length === null ? substr($text, $start) : substr($text, $start, $length);
-        }
         return mb_substr($text, $start, $length, 'UTF-8');
     }
 
     private function replaceCharAt(string $text, int $position, string $char): string
     {
-        if (!$this->isTlf) {
-            if ($position < strlen($text)) {
-                $text[$position] = $char;
-            }
-            return $text;
-        }
         return mb_substr($text, 0, $position, 'UTF-8') . $char . mb_substr($text, $position + 1, null, 'UTF-8');
+    }
+
+    private function latin1ToUtf8(string $input): string
+    {
+        /** @var string */
+        return mb_convert_encoding($input, 'UTF-8', 'ISO-8859-1');
     }
 
     public function setHorizontalLayout(LayoutMode $mode): self
@@ -451,7 +448,7 @@ final class Figlet
                 '</nobr>';
         }
 
-        return $result;
+        return $result . "\n";
     }
 
     /** @param list<list<string>> $figures */
@@ -1174,7 +1171,6 @@ final class Figlet
     private function parseChar(mixed $stream): array|false
     {
         $out = [];
-        $pattern = $this->isTlf ? '/(.){1,2}$/u' : '/(.){1,2}$/';
 
         for ($i = 0; $i < $this->height; $i++) {
             if (feof($stream)) {
@@ -1183,9 +1179,21 @@ final class Figlet
 
             $raw = fgets($stream, 2048);
             $line = $raw !== false ? rtrim($raw, "\r\n") : '';
-            if (preg_match($pattern, $line, $endmark)) {
-                $line = str_replace($endmark[1], '', $line);
+
+            if (!$this->isTlf) {
+                $line = $this->latin1ToUtf8($line);
             }
+            $pos = mb_strlen($line, 'UTF-8') - 1;
+            while ($pos >= 0 && mb_substr($line, $pos, 1, 'UTF-8') === ' ') {
+                $pos--;
+            }
+            if ($pos >= 0) {
+                $endChar = mb_substr($line, $pos, 1, 'UTF-8');
+                while ($pos >= 0 && mb_substr($line, $pos, 1, 'UTF-8') === $endChar) {
+                    $pos--;
+                }
+            }
+            $line = $pos >= 0 ? mb_substr($line, 0, $pos + 1, 'UTF-8') : '';
 
             $out[] = $line;
         }

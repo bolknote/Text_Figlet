@@ -278,7 +278,7 @@ final class FigletTest extends TestCase
         $figlet->loadFont($font);
         $figlet->loadControlFile('frango');
 
-        $this->assertSame('S', $figlet->render('V'));
+        $this->assertSame("S\n", $figlet->render('V'));
     }
 
     public function testBundledHzControlFileChangesInputDecoding(): void
@@ -291,7 +291,7 @@ final class FigletTest extends TestCase
         $figlet->loadFont($font);
         $figlet->loadControlFile('hz');
 
-        $this->assertSame('X', $figlet->render("~{AB~}"));
+        $this->assertSame("X\n", $figlet->render("~{AB~}"));
     }
 
     public function testBundledGb16fsFontRendersHzInput(): void
@@ -367,8 +367,8 @@ final class FigletTest extends TestCase
         $withoutGerman = new Figlet();
         $withoutGerman->loadFont($fontPath, false);
 
-        $this->assertSame('A', $withGerman->render('Ä'));
-        $this->assertSame('', $withoutGerman->render('Ä'));
+        $this->assertSame("A\n", $withGerman->render('Ä'));
+        $this->assertSame("\n", $withoutGerman->render('Ä'));
     }
 
     public function testDerivedFittingLayoutFromOldLayoutZero(): void
@@ -412,10 +412,10 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('O', $figlet->render('A'));
-        $this->assertSame('E', $figlet->render('é'));
-        $this->assertSame('S', $figlet->render('☃'));
-        $this->assertSame('R', $figlet->render('🚀'));
+        $this->assertSame("O\n", $figlet->render('A'));
+        $this->assertSame("E\n", $figlet->render('é'));
+        $this->assertSame("S\n", $figlet->render('☃'));
+        $this->assertSame("R\n", $figlet->render('🚀'));
     }
 
     public function testNegativeHexCodetagIsSkipped(): void
@@ -429,7 +429,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('', $figlet->render('☃'));
+        $this->assertSame("\n", $figlet->render('☃'));
     }
 
     public function testBlankCodetagLineIsIgnored(): void
@@ -440,7 +440,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('S', $figlet->render('☃'));
+        $this->assertSame("S\n", $figlet->render('☃'));
     }
 
     public function testTruncatedFontDoesNotCrash(): void
@@ -449,7 +449,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('', $figlet->render('A'));
+        $this->assertSame("\n", $figlet->render('A'));
     }
 
     // --- Layout mode derivation ---
@@ -533,7 +533,7 @@ final class FigletTest extends TestCase
         $result = $figlet->render('Hi');
         $this->assertNotEmpty($result);
         $lines = explode("\n", $result);
-        $this->assertCount(16, $lines);
+        $this->assertCount(17, $lines);
     }
 
     public function testRenderSingleChar(): void
@@ -683,8 +683,8 @@ final class FigletTest extends TestCase
         $figlet->setVerticalLayout(LayoutMode::FullSize);
         $result = $figlet->render("A\nB");
         $lines = explode("\n", $result);
-        // Full size: 2 * height lines
-        $this->assertCount(4, $lines);
+        // Full size: 2 * height lines + trailing newline
+        $this->assertCount(5, $lines);
     }
 
     public function testVerticalFitting(): void
@@ -716,7 +716,7 @@ final class FigletTest extends TestCase
         $result = $figlet->render("|\n|");
         $lines = explode("\n", $result);
         // Equal chars should smush, reducing total height
-        $this->assertLessThan(4, count($lines));
+        $this->assertLessThan(5, count($lines));
     }
 
     public function testExactVerticalRule2UnderscoreSmushing(): void
@@ -725,7 +725,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('|', $figlet->render("_\n|"));
+        $this->assertSame("|\n", $figlet->render("_\n|"));
     }
 
     public function testExactVerticalRule3HierarchySmushing(): void
@@ -734,7 +734,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('<', $figlet->render("(\n<"));
+        $this->assertSame("<\n", $figlet->render("(\n<"));
     }
 
     public function testExactVerticalRule5Smushing(): void
@@ -743,7 +743,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
 
-        $this->assertSame('|', $figlet->render("|\n|"));
+        $this->assertSame("|\n", $figlet->render("|\n|"));
     }
 
     // --- Word wrapping ---
@@ -764,7 +764,7 @@ final class FigletTest extends TestCase
         $figlet->setWidth(1000);
         $result = $figlet->render('Hi');
         $lines = explode("\n", $result);
-        $this->assertCount(2, $lines);
+        $this->assertCount(3, $lines);
     }
 
     public function testWordWrapPreservesLeadingBlanks(): void
@@ -786,7 +786,7 @@ final class FigletTest extends TestCase
         $figlet->loadFont($fontPath);
         $figlet->setWidth(3);
 
-        $this->assertCount(2, explode("\n", $figlet->render('ABCD')));
+        $this->assertCount(3, explode("\n", $figlet->render('ABCD')));
     }
 
     // --- Paragraph mode ---
@@ -899,7 +899,7 @@ final class FigletTest extends TestCase
         $figlet->loadFont($fontPath);
         $figlet->setWidth(1)->setJustification(Justification::Right);
 
-        $this->assertSame('AA', $figlet->render('A'));
+        $this->assertSame("AA\n", $figlet->render('A'));
     }
 
     // --- RTL ---
