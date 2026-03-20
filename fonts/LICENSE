@@ -63,9 +63,9 @@ headers and are included under those terms.
 
 ---
 
-From TOIlet official distribution (`circle.tlf`, `emboss.tlf`, `emboss2.tlf`,
-`future.tlf`, `letter.tlf`, `pagga.tlf`, `smblock.tlf`, `smbraille.tlf`,
-`wideterm.tlf`):
+From TOIlet official distribution (`bfraktur.tlf`, `circle.tlf`, `emboss.tlf`,
+`emboss2.tlf`, `fauxcyrillic.tlf`, `fullcyrillic.tlf`, `future.tlf`,
+`letter.tlf`, `pagga.tlf`, `smblock.tlf`, `smbraille.tlf`, `wideterm.tlf`):
 
 `emboss.tlf` header states:
 "This font is free software. It comes without any warranty, to the extent

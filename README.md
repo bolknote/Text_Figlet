@@ -100,11 +100,59 @@ echo $figlet->render('Hello');
 $figlet->clearControlFiles();
 ```
 
+## Filters
+
+Post-processing filters transform the rendered output. Inspired by TOIlet. Filters are applied in order after rendering and can be chained:
+
+```php
+use Bolk\TextFiglet\Filter;
+
+$figlet->addFilter(Filter::Border);
+echo $figlet->render('Hello');
+
+$figlet->addFilter(Filter::Rainbow);   // chained: border + rainbow
+echo $figlet->render('Hello');
+
+$figlet->clearFilters();
+```
+
+Available filters:
+
+| Filter | Description |
+|--------|-------------|
+| `Filter::Crop` | Trim blank rows and columns |
+| `Filter::Flip` | Mirror horizontally |
+| `Filter::Flop` | Mirror vertically |
+| `Filter::Rotate180` | Rotate 180 degrees |
+| `Filter::RotateLeft` | Rotate 90° counterclockwise |
+| `Filter::RotateRight` | Rotate 90° clockwise |
+| `Filter::Border` | Surround with a Unicode box border |
+| `Filter::Rainbow` | Rainbow ANSI color effect |
+| `Filter::Metal` | Metallic ANSI color effect |
+
+Color filters (`Rainbow`, `Metal`) output ANSI escape codes for terminal display.
+
+## Terminal width
+
+Auto-detect the terminal width and use it for word wrapping:
+
+```php
+$figlet->setWidth(Figlet::terminalWidth());
+echo $figlet->render('Adapts to your terminal');
+```
+
+`Figlet::terminalWidth()` checks the `COLUMNS` environment variable, falls back to `tput cols`, and defaults to 80.
+
 ## HTML output
 
 ```php
-echo $figlet->render('Hi', asHtml: true);
+use Bolk\TextFiglet\ExportFormat;
+
+echo $figlet->render('Hi', ExportFormat::Html);   // XHTML with <span style>
+echo $figlet->render('Hi', ExportFormat::Html3);   // table-based with <font color>
 ```
+
+`Html` produces XHTML with `<nobr>`, `<span>`, `&nbsp;`. `Html3` produces a `<table>` with `<tr><td><tt>` rows and `<font color>` for colors -- compatible with older HTML renderers and email clients. Color filters (`Rainbow`, `Metal`) are automatically converted from ANSI to the appropriate HTML tags in both modes.
 
 ## Font formats
 

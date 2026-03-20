@@ -5,7 +5,9 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 use Bolk\TextFiglet\ControlFile;
+use Bolk\TextFiglet\ExportFormat;
 use Bolk\TextFiglet\Figlet;
+use Bolk\TextFiglet\Filter;
 use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
 
@@ -100,9 +102,22 @@ section('6. HTML OUTPUT');
 
 $figlet = new Figlet();
 $figlet->loadFont($fontsDir . 'small.flf');
-$html = $figlet->render('Hi', asHtml: true);
-echo "First 200 chars of HTML output:\n";
-echo substr($html, 0, 200) . "...\n";
+
+subsection('ExportFormat::Html (XHTML with <span>)');
+$html = $figlet->render('Hi', ExportFormat::Html);
+echo "First 200 chars:\n";
+echo substr($html, 0, 200) . "...\n\n";
+
+subsection('ExportFormat::Html3 (table with <font>)');
+$html3 = $figlet->render('Hi', ExportFormat::Html3);
+echo $html3 . "\n";
+
+subsection('ExportFormat::Html3 with Rainbow');
+$figlet->addFilter(Filter::Rainbow);
+$html3Rainbow = $figlet->render('Hi', ExportFormat::Html3);
+echo "First 300 chars:\n";
+echo substr($html3Rainbow, 0, 300) . "...\n";
+$figlet->clearFilters();
 
 // ============================================================
 section('7. WORD WRAPPING (small.flf)');
@@ -314,6 +329,98 @@ foreach (['utf8.flc', 'hz.flc', 'frango.flc', 'jis0201.flc'] as $name) {
         $ruleCount,
     );
 }
+
+// ============================================================
+section('19. FILTERS');
+
+$figlet = new Figlet();
+$figlet->loadFont($fontsDir . 'future.tlf');
+
+subsection('No filter (plain) — future.tlf');
+echo $figlet->render('Hello') . "\n\n";
+
+$bigFiglet = new Figlet();
+$bigFiglet->loadFont($fontsDir . 'big.flf');
+
+subsection('Crop — big.flf (has blank padding rows)');
+echo "Before crop:\n";
+echo $bigFiglet->render('Hi');
+$bigFiglet->addFilter(Filter::Crop);
+echo "\nAfter crop:\n";
+echo $bigFiglet->render('Hi') . "\n";
+$bigFiglet->clearFilters();
+
+subsection('Flip (horizontal mirror)');
+$figlet->addFilter(Filter::Flip);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+subsection('Flop (vertical mirror)');
+$figlet->addFilter(Filter::Flop);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+subsection('Rotate 180');
+$figlet->addFilter(Filter::Rotate180);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+subsection('Border');
+$figlet->addFilter(Filter::Border);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+$letterFiglet = new Figlet();
+$letterFiglet->loadFont($fontsDir . 'letter.tlf');
+
+subsection('Rotate Right (90 degrees clockwise) — letter.tlf');
+$letterFiglet->addFilter(Filter::RotateRight);
+echo $letterFiglet->render('Hello') . "\n\n";
+$letterFiglet->clearFilters();
+
+subsection('Rotate Left (90 degrees counterclockwise) — letter.tlf');
+$letterFiglet->addFilter(Filter::RotateLeft);
+echo $letterFiglet->render('Hello') . "\n\n";
+
+$figlet->loadFont($fontsDir . 'small.flf');
+
+subsection('Rainbow (ANSI colors) — small.flf');
+$figlet->addFilter(Filter::Rainbow);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+subsection('Metal (ANSI colors)');
+$figlet->addFilter(Filter::Metal);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+subsection('Chained: Border + Rainbow');
+$figlet->addFilter(Filter::Border)->addFilter(Filter::Rainbow);
+echo $figlet->render('Hello') . "\n\n";
+$figlet->clearFilters();
+
+// ============================================================
+section('20. TERMINAL WIDTH');
+
+echo "Detected terminal width: " . Figlet::terminalWidth() . " columns\n\n";
+
+$figlet = new Figlet();
+$figlet->loadFont($fontsDir . 'small.flf');
+$figlet->setWidth(Figlet::terminalWidth());
+echo $figlet->render('Terminal width wrapping demo text') . "\n";
+
+// ============================================================
+section('21. INFOCODE');
+
+$figlet = new Figlet();
+$figlet->loadFont($fontsDir . 'standard.flf');
+$figlet->setWidth(Figlet::terminalWidth());
+
+echo "Code 0 (version):    " . $figlet->getInfoCode(0) . "\n";
+echo "Code 1 (version ID): " . $figlet->getInfoCode(1) . "\n";
+echo "Code 2 (font dir):   " . $figlet->getInfoCode(2) . "\n";
+echo "Code 3 (font name):  " . $figlet->getInfoCode(3) . "\n";
+echo "Code 4 (term width): " . $figlet->getInfoCode(4) . "\n";
 
 echo "\n" . str_repeat('=', 70) . "\n";
 echo "  Demo complete!\n";

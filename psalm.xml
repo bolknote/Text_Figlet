@@ -19,5 +19,31 @@
                 <directory name="tests"/>
             </errorLevel>
         </UnusedClass>
+        <UndefinedMethod>
+            <errorLevel type="suppress">
+                <referencedMethod name="FFI::ioctl"/>
+            </errorLevel>
+        </UndefinedMethod>
+        <UndefinedPropertyFetch>
+            <errorLevel type="suppress">
+                <referencedProperty name="FFI\CData::$ws_col"/>
+            </errorLevel>
+        </UndefinedPropertyFetch>
+        <PossiblyNullArgument>
+            <errorLevel type="suppress">
+                <referencedFunction name="FFI::addr"/>
+            </errorLevel>
+        </PossiblyNullArgument>
+        <MixedReturnStatement>
+            <errorLevel type="suppress">
+                <file name="src/Figlet.php"/>
+            </errorLevel>
+        </MixedReturnStatement>
+        <InvalidArrayOffset>
+            <errorLevel type="suppress">
+                <file name="src/Renderer.php"/>
+                <file name="src/FilterEngine.php"/>
+            </errorLevel>
+        </InvalidArrayOffset>
     </issueHandlers>
 </psalm>

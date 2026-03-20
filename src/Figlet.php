@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet;
 
+use FFI;
+use FFI\Exception as FFIException;
 use ZipArchive;
 use Bolk\TextFiglet\Exception\FontLoadException;
 use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.5.1';
+    public const string VERSION = '2.6.0';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -42,6 +44,11 @@ final class Figlet
 
     /** @var list<ControlFile> */
     private array $controlFiles = [];
+
+    /** @var list<Filter> */
+    private array $filters = [];
+
+    private string $fontName = '';
 
     private const HIERARCHY_CLASSES = [
         '|' => 1, '/' => 2, '\\' => 2, '[' => 3, ']' => 3,
@@ -134,6 +141,106 @@ final class Figlet
         return $this;
     }
 
+    public function addFilter(Filter $filter): self
+    {
+        $this->filters[] = $filter;
+        return $this;
+    }
+
+    public function clearFilters(): self
+    {
+        $this->filters = [];
+        return $this;
+    }
+
+    public static function terminalWidth(): int
+    {
+        $columns = getenv('COLUMNS');
+        if ($columns !== false && is_numeric($columns) && (int) $columns > 0) {
+            return (int) $columns;
+        }
+
+        $width = self::terminalWidthViaIoctl();
+        if ($width > 0) {
+            return $width;
+        }
+
+        if (function_exists('exec')) {
+            $result = exec('tput cols 2>/dev/null');
+            if ($result !== false && is_numeric($result) && (int) $result > 0) {
+                return (int) $result;
+            }
+
+            $result = exec('stty size 2>/dev/null');
+            if ($result !== false && preg_match('/\d+ (\d+)/', $result, $match) && (int) $match[1] > 0) {
+                return (int) $match[1];
+            }
+        }
+
+        return 80;
+    }
+
+    private static function terminalWidthViaIoctl(): int
+    {
+        if (!extension_loaded('ffi') || PHP_OS_FAMILY === 'Windows') {
+            return 0;
+        }
+
+        try {
+            $ffi = FFI::cdef(<<<'CDEF'
+                struct winsize {
+                    unsigned short ws_row;
+                    unsigned short ws_col;
+                    unsigned short ws_xpixel;
+                    unsigned short ws_ypixel;
+                };
+                int ioctl(int fd, unsigned long request, ...);
+                CDEF);
+
+            $win = $ffi->new('struct winsize');
+            $tiocgwinsz = PHP_OS_FAMILY === 'Linux' ? 0x5413 : 0x40087468;
+
+            // Probe terminal width via standard POSIX fds: stdout (1), stderr (2), stdin (0).
+            foreach ([1, 2, 0] as $fd) {
+                /** @phpstan-ignore method.notFound, property.notFound */
+                if ($ffi->ioctl($fd, $tiocgwinsz, FFI::addr($win)) !== -1 && $win->ws_col > 0) {
+                    /** @phpstan-ignore return.type */
+                    return $win->ws_col;
+                }
+            }
+        } catch (FFIException) {
+            return 0;
+        }
+
+        return 0;
+    }
+
+    public function getFontName(): string
+    {
+        return $this->fontName;
+    }
+
+    public function getInfoCode(int $code): string
+    {
+        return match ($code) {
+            0 => self::VERSION,
+            1 => $this->versionInt(),
+            2 => dirname(__DIR__) . '/fonts',
+            3 => $this->fontName,
+            4 => (string) ($this->outputWidth ?? 80),
+            default => '',
+        };
+    }
+
+    private function versionInt(): string
+    {
+        if (preg_match('/^(\d+)\.(\d+)\.(\d+)$/', self::VERSION, $match) !== 1) {
+            return preg_replace('/\D+/', '', self::VERSION) ?? '';
+        }
+
+        return sprintf('%d%02d%02d', (int) $match[1], (int) $match[2], (int) $match[3]);
+    }
+
     public function getHeight(): int
     {
         return $this->height;
@@ -168,6 +275,7 @@ final class Figlet
     {
         $this->font = [];
         $this->fontCharWidths = [];
+        $this->fontName = pathinfo($filename, PATHINFO_FILENAME);
 
         if (!file_exists($filename)) {
             $fontDir = __DIR__ . '/../fonts/';
@@ -407,7 +515,7 @@ final class Figlet
         }
     }
 
-    public function render(string $str, bool $asHtml = false): string
+    public function render(string $str, ExportFormat $format = ExportFormat::Text): string
     {
         foreach ($this->controlFiles as $cf) {
             $str = $cf->apply($str);
@@ -440,15 +548,14 @@ final class Figlet
 
         $combined = $this->applyJustification($combined);
 
-        $result = str_replace($this->hardblank, ' ', implode("\n", $combined));
-
-        if ($asHtml) {
-            return '<nobr>' .
-                nl2br(str_replace(' ', '&nbsp;', htmlspecialchars($result))) .
-                '</nobr>';
+        foreach ($combined as &$row) {
+            $row = str_replace($this->hardblank, ' ', $row);
         }
+        unset($row);
 
-        return $result . "\n";
+        $combined = $this->applyFilters($combined);
+
+        return Renderer::export($combined, $format);
     }
 
     /** @param list<list<string>> $figures */
@@ -1207,5 +1314,18 @@ final class Figlet
         for ($i = 0; $i < $this->height && !feof($stream); $i++) {
             fgets($stream, 2048);
         }
+    }
+
+    /**
+     * @param list<string> $figure
+     * @return list<string>
+     */
+    private function applyFilters(array $figure): array
+    {
+        foreach ($this->filters as $filter) {
+            $figure = FilterEngine::apply($filter, $figure);
+        }
+
+        return $figure;
     }
 }

@@ -33,7 +33,8 @@ Each file includes an explicit permissive/public-domain style notice in its head
 ## TOIlet fonts
 
 Assets:
-`circle.tlf`, `emboss.tlf`, `emboss2.tlf`, `future.tlf`, `letter.tlf`,
+`bfraktur.tlf`, `circle.tlf`, `emboss.tlf`, `emboss2.tlf`,
+`fauxcyrillic.tlf`, `fullcyrillic.tlf`, `future.tlf`, `letter.tlf`,
 `pagga.tlf`, `smblock.tlf`, `smbraille.tlf`, `wideterm.tlf`
 
 Source:
@@ -41,6 +42,13 @@ TOIlet official distribution and `cmatsuoka/figlet-fonts`
 
 Licensing note:
 Each file states that it is free software under the WTFPL v2.
+
+Not bundled from TOIlet:
+`ascii9.tlf`, `ascii12.tlf`, `smascii9.tlf`, `smascii12.tlf`,
+`bigascii9.tlf`, `bigascii12.tlf`, `mono9.tlf`, `mono12.tlf`,
+`smmono9.tlf`, `smmono12.tlf`, `bigmono9.tlf`, `bigmono12.tlf`,
+`biggray9.tlf`, `biggray12.tlf` (distributed there as compressed binary `.tlf`
+assets with no standalone in-file license header in this form).
 
 ## JavE fonts
 

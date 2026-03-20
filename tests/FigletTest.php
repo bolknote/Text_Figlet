@@ -12,7 +12,10 @@ use ReflectionProperty;
 use ReflectionMethod;
 use Bolk\TextFiglet\Exception\FontLoadException;
 use Bolk\TextFiglet\Exception\FontNotFoundException;
+use Bolk\TextFiglet\ExportFormat;
 use Bolk\TextFiglet\Figlet;
+use Bolk\TextFiglet\Filter;
+use Bolk\TextFiglet\FilterEngine;
 use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
 use PHPUnit\Framework\TestCase;
@@ -556,10 +559,62 @@ final class FigletTest extends TestCase
     public function testHtmlOutput(): void
     {
         $figlet = $this->loadedFiglet();
-        $result = $figlet->render('A', asHtml: true);
+        $result = $figlet->render('A', ExportFormat::Html);
         $this->assertStringStartsWith('<nobr>', $result);
         $this->assertStringEndsWith('</nobr>', $result);
         $this->assertStringContainsString('&nbsp;', $result);
+    }
+
+    public function testHtml3Output(): void
+    {
+        $figlet = $this->loadedFiglet('emboss.tlf');
+        $result = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringStartsWith('<table ', $result);
+        $this->assertStringContainsString('<tr><td><tt>', $result);
+        $this->assertStringContainsString('</tt></td></tr>', $result);
+        $this->assertStringContainsString('&#160;', $result);
+        $this->assertStringEndsWith("</table>\n", $result);
+    }
+
+    public function testHtml3WithRainbow(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $result = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('<font color="', $result);
+        $this->assertStringContainsString('</font>', $result);
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testHtmlWithRainbow(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $result = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('<span style="color:', $result);
+        $this->assertStringContainsString('</span>', $result);
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testHtml3NonAsciiEntities(): void
+    {
+        $figlet = $this->loadedFiglet('emboss.tlf');
+        $result = $figlet->render('A', ExportFormat::Html3);
+        $this->assertMatchesRegularExpression('/&#\d+;/', $result);
+    }
+
+    public function testExportFormatTextIsDefault(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $plain = $figlet->render('A');
+        $explicit = $figlet->render('A', ExportFormat::Text);
+        $this->assertSame($plain, $explicit);
     }
 
     public function testUtf8Support(): void
@@ -1358,5 +1413,481 @@ final class FigletTest extends TestCase
             ['AB', 'C '],
             $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['AB'], ['C'], LayoutMode::Fitting),
         );
+    }
+
+    // --- Filters ---
+
+    public function testAddFilterReturnsSelf(): void
+    {
+        $figlet = new Figlet();
+        $this->assertInstanceOf(Figlet::class, $figlet->addFilter(Filter::Crop));
+    }
+
+    public function testClearFiltersReturnsSelf(): void
+    {
+        $figlet = new Figlet();
+        $figlet->addFilter(Filter::Crop);
+        $this->assertInstanceOf(Figlet::class, $figlet->clearFilters());
+    }
+
+    public function testFilterCrop(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [65 => ' A '],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Crop);
+
+        $result = $figlet->render('A');
+        $this->assertSame("A\n", $result);
+    }
+
+    public function testFilterCropRemovesBlankRows(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 3);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['', 'A', '']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+        $figlet->addFilter(Filter::Crop);
+
+        $this->assertSame("A\n", $figlet->render('A'));
+    }
+
+    public function testFilterCropAllBlank(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
+        $figlet->addFilter(Filter::Crop);
+
+        $this->assertSame("\n", $figlet->render(' '));
+    }
+
+    public function testFilterFlip(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [65 => '(A>'],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Flip);
+
+        $result = rtrim($figlet->render('A'));
+        $this->assertSame('<A)', $result);
+    }
+
+    public function testFilterFlipMirrorsSlashes(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [65 => '/\\'],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Flip);
+
+        $this->assertSame("/\\\n", $figlet->render('A'));
+    }
+
+    public function testFilterFlop(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 2);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['TOP', 'BOT']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 3]);
+        $figlet->addFilter(Filter::Flop);
+
+        $lines = explode("\n", $figlet->render('A'));
+        $this->assertSame('BOT', $lines[0]);
+        $this->assertSame('TOP', $lines[1]);
+    }
+
+    public function testFilterRotate180(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 2);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['(A', 'B)']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 2]);
+        $figlet->addFilter(Filter::Rotate180);
+
+        $lines = explode("\n", $figlet->render('A'));
+        $this->assertSame('(B', $lines[0]);
+        $this->assertSame('A)', $lines[1]);
+    }
+
+    public function testFilterBorder(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Border);
+
+        $result = $figlet->render('A');
+        $lines = explode("\n", $result);
+
+        $this->assertStringStartsWith('┌', $lines[0]);
+        $this->assertStringEndsWith('┐', $lines[0]);
+        $this->assertStringStartsWith('│', $lines[1]);
+        $this->assertStringEndsWith('│', $lines[1]);
+        $nonEmpty = array_filter($lines, static fn(string $l): bool => $l !== '');
+        $bottomLine = end($nonEmpty);
+        $this->assertNotFalse($bottomLine);
+        $this->assertStringStartsWith('└', $bottomLine);
+        $this->assertStringEndsWith('┘', $bottomLine);
+    }
+
+    public function testFilterBorderDimensions(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [65 => 'AA'],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $plain = $figlet->render('A');
+        $plainLines = explode("\n", rtrim($plain));
+        $plainWidth = mb_strlen($plainLines[0], 'UTF-8');
+        $plainHeight = count($plainLines);
+
+        $figlet->addFilter(Filter::Border);
+        $bordered = $figlet->render('A');
+        $borderedLines = explode("\n", rtrim($bordered));
+        $borderedWidth = mb_strlen($borderedLines[0], 'UTF-8');
+        $borderedHeight = count($borderedLines);
+
+        $this->assertSame($plainWidth + 2, $borderedWidth);
+        $this->assertSame($plainHeight + 2, $borderedHeight);
+    }
+
+    public function testFilterRotateRightDimensions(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 2);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['AB', 'CD']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 2]);
+        $figlet->addFilter(Filter::RotateRight);
+
+        $lines = explode("\n", rtrim($figlet->render('A')));
+        $this->assertCount(1, $lines);
+        $this->assertSame(4, mb_strlen($lines[0], 'UTF-8'));
+    }
+
+    public function testFilterRotateRightPairBased(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['ABCD']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 4]);
+        $figlet->addFilter(Filter::RotateRight);
+
+        $lines = explode("\n", rtrim($figlet->render('A')));
+        $this->assertCount(2, $lines);
+        $this->assertSame(2, mb_strlen($lines[0], 'UTF-8'));
+    }
+
+    public function testFilterRotateLeftPairBased(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => ['ABCD']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 4]);
+        $figlet->addFilter(Filter::RotateLeft);
+
+        $lines = explode("\n", rtrim($figlet->render('A')));
+        $this->assertCount(2, $lines);
+        $this->assertSame(2, mb_strlen($lines[0], 'UTF-8'));
+    }
+
+    public function testFilterRotateMatchesToilet(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont($this->fontPath('future.tlf'));
+
+        $figlet->addFilter(Filter::RotateRight);
+        $right = $figlet->render('Hi');
+        $figlet->clearFilters();
+
+        $figlet->addFilter(Filter::RotateLeft);
+        $left = $figlet->render('Hi');
+
+        $rightLines = explode("\n", rtrim($right));
+        $leftLines = explode("\n", rtrim($left));
+
+        $this->assertSame('╹ ┣━╻ ', $rightLines[0]);
+        $this->assertSame('╹╹┫┃╻╻', $rightLines[1]);
+        $this->assertSame('╻╻┫┃╹╹', $leftLines[0]);
+        $this->assertSame('╻ ┣━╹', rtrim($leftLines[1]));
+    }
+
+    public function testFilterRainbow(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $this->assertStringContainsString("\e[0m", $result);
+    }
+
+    public function testFilterRainbowSkipsSpaces(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $result = rtrim($figlet->render(' '));
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testFilterMetal(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Metal);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $this->assertStringContainsString("\e[0m", $result);
+    }
+
+    public function testFilterMetalSkipsSpaces(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
+        $figlet->addFilter(Filter::Metal);
+
+        $result = rtrim($figlet->render(' '));
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testFilterChaining(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $figlet->addFilter(Filter::Border);
+        $bordered = $figlet->render('A');
+
+        $figlet->addFilter(Filter::Flop);
+        $borderedAndFlopped = $figlet->render('A');
+
+        $borderedLines = explode("\n", rtrim($bordered));
+        $floppedLines = explode("\n", rtrim($borderedAndFlopped));
+
+        $this->assertStringStartsWith('┌', $borderedLines[0]);
+        $this->assertStringStartsWith('┌', $floppedLines[0]);
+    }
+
+    public function testClearFiltersRemovesAllFilters(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $plain = $figlet->render('A');
+
+        $figlet->addFilter(Filter::Border);
+        $bordered = $figlet->render('A');
+        $this->assertNotSame($plain, $bordered);
+
+        $figlet->clearFilters();
+        $cleared = $figlet->render('A');
+        $this->assertSame($plain, $cleared);
+    }
+
+    public function testFilterWithTlfFont(): void
+    {
+        $figlet = $this->loadedFiglet('emboss.tlf');
+        $figlet->addFilter(Filter::Flop);
+        $result = $figlet->render('A');
+        $lines = explode("\n", rtrim($result));
+        $this->assertSame('┓ ┓', $lines[0]);
+        $this->assertSame('┗━┃', $lines[1]);
+        $this->assertSame('┗━┃', $lines[2]);
+    }
+
+    public function testFilterFlipWithTlfFont(): void
+    {
+        $figlet = $this->loadedFiglet('emboss.tlf');
+        $plain = $figlet->render('A');
+        $plainLines = explode("\n", rtrim($plain));
+
+        $figlet->addFilter(Filter::Flip);
+        $result = $figlet->render('A');
+        $lines = explode("\n", rtrim($result));
+
+        $this->assertCount(count($plainLines), $lines);
+        foreach ($lines as $i => $line) {
+            $this->assertSame(
+                mb_strlen($plainLines[$i], 'UTF-8'),
+                mb_strlen($line, 'UTF-8'),
+            );
+        }
+    }
+
+    public function testFilterRotateRightEmptyFigure(): void
+    {
+        $this->assertSame([''], FilterEngine::apply(Filter::RotateRight, []));
+    }
+
+    public function testFilterRotateLeftEmptyFigure(): void
+    {
+        $this->assertSame([''], FilterEngine::apply(Filter::RotateLeft, []));
+    }
+
+    // --- Terminal width ---
+
+    public function testTerminalWidthReturnsPositiveInt(): void
+    {
+        $width = Figlet::terminalWidth();
+        $this->assertGreaterThan(0, $width);
+    }
+
+    public function testTerminalWidthReadsColumnsEnvVar(): void
+    {
+        $previous = getenv('COLUMNS');
+        try {
+            putenv('COLUMNS=142');
+            $this->assertSame(142, Figlet::terminalWidth());
+        } finally {
+            if ($previous !== false) {
+                putenv('COLUMNS=' . $previous);
+            } else {
+                putenv('COLUMNS');
+            }
+        }
+    }
+
+    public function testTerminalWidthViaIoctlReturnsNonNegativeInt(): void
+    {
+        $figlet = new Figlet();
+        $result = $this->invokeFigletMethod($figlet, 'terminalWidthViaIoctl');
+        $this->assertIsInt($result);
+        $this->assertGreaterThanOrEqual(0, $result);
+    }
+
+    public function testTerminalWidthViaIoctlWithFfi(): void
+    {
+        if (!extension_loaded('ffi') || PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('ext-ffi not available or Windows');
+        }
+
+        $figlet = new Figlet();
+        $result = $this->invokeFigletMethod($figlet, 'terminalWidthViaIoctl');
+        $this->assertIsInt($result);
+        $this->assertGreaterThanOrEqual(0, $result);
+    }
+
+    // --- Font name & infocode ---
+
+    public function testGetFontName(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $this->assertSame('makisupa', $figlet->getFontName());
+    }
+
+    public function testGetFontNameFromTlf(): void
+    {
+        $figlet = $this->loadedFiglet('emboss.tlf');
+        $this->assertSame('emboss', $figlet->getFontName());
+    }
+
+    public function testGetInfoCode0ReturnsVersion(): void
+    {
+        $figlet = new Figlet();
+        $this->assertSame(Figlet::VERSION, $figlet->getInfoCode(0));
+    }
+
+    public function testGetInfoCode1ReturnsVersionCode(): void
+    {
+        $figlet = new Figlet();
+        $matched = preg_match('/^(\d+)\.(\d+)\.(\d+)$/', Figlet::VERSION, $match);
+        $this->assertSame(1, $matched);
+        $expected = sprintf('%d%02d%02d', (int) $match[1], (int) $match[2], (int) $match[3]);
+        $this->assertSame($expected, $figlet->getInfoCode(1));
+    }
+
+    public function testGetInfoCode2ReturnsFontDirectory(): void
+    {
+        $figlet = new Figlet();
+        $dir = $figlet->getInfoCode(2);
+        $this->assertStringEndsWith('fonts', $dir);
+        $this->assertTrue(is_dir($dir));
+    }
+
+    public function testGetInfoCode3ReturnsFontName(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $this->assertSame('makisupa', $figlet->getInfoCode(3));
+    }
+
+    public function testGetInfoCode4ReturnsWidth(): void
+    {
+        $figlet = new Figlet();
+        $this->assertSame('80', $figlet->getInfoCode(4));
+
+        $figlet->setWidth(120);
+        $this->assertSame('120', $figlet->getInfoCode(4));
+    }
+
+    public function testGetInfoCodeDefaultReturnsEmpty(): void
+    {
+        $figlet = new Figlet();
+        $this->assertSame('', $figlet->getInfoCode(99));
+    }
+
+    public function testFilterRotateRightTransformsPair2x2(): void
+    {
+        $this->assertSame(['▀▄'], FilterEngine::apply(Filter::RotateRight, ['▄▀']));
+    }
+
+    public function testFilterRotateLeftTransformsPair2x2(): void
+    {
+        $this->assertSame(['▀▄'], FilterEngine::apply(Filter::RotateLeft, ['▄▀']));
+    }
+
+    public function testFilterRotateRightTransformsPair2x4(): void
+    {
+        $this->assertSame(["''"], FilterEngine::apply(Filter::RotateRight, [': ']));
+    }
+
+    public function testFilterRotateLeftTransformsPair2x4(): void
+    {
+        $this->assertSame(['..'], FilterEngine::apply(Filter::RotateLeft, [': ']));
+    }
+
+    public function testParseCharWithTrailingSpacesAfterEndmark(): void
+    {
+        $lines = ["flf2a\$ 1 1 1 -1 0 0"];
+        for ($code = 32; $code < 127; $code++) {
+            $glyph = $code === 32 ? ' ' : chr($code);
+            $lines[] = $glyph . '~  ';
+        }
+        for ($i = 0; $i < 7; $i++) {
+            $lines[] = 'g~  ';
+        }
+        $fontPath = $this->writeTempFile(implode("\n", $lines) . "\n", '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $this->assertSame("A\n", $figlet->render('A'));
     }
 }
