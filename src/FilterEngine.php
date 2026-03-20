@@ -377,13 +377,19 @@ final class FilterEngine
         $rowLen = self::len($row);
         $colored = '';
         $hasColor = false;
+        $lastColor = '';
 
         for ($col = 0; $col < $rowLen; $col++) {
             $char = self::charAt($row, $col);
             if ($char !== ' ') {
                 $idx = intdiv($col, $divisor) + $offset;
                 $key = (($idx % $count) + $count) % $count;
-                $colored .= $colors[$key] . $char;
+                $color = $colors[$key];
+                if ($color !== $lastColor) {
+                    $colored .= $color;
+                    $lastColor = $color;
+                }
+                $colored .= $char;
                 $hasColor = true;
             } else {
                 $colored .= $char;

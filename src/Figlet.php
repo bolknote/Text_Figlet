@@ -12,7 +12,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.6.0';
+    public const string VERSION = '2.6.1';
 
     protected int $height = 0;
     protected int $baseline = 0;
