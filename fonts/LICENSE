@@ -5,9 +5,17 @@ The font and control-file assets in this directory are collected from:
 - ftp.figlet.org archive (`ftp://ftp.figlet.org/pub/figlet/fonts/`)
 - TOIlet official distribution (`http://caca.zoy.org/wiki/toilet`)
 - `cmatsuoka/figlet-fonts` (`https://github.com/cmatsuoka/figlet-fonts.git`)
+- [JavE FIGlet fonts](http://www.jave.de/figlet/fonts.html) (historical mirror where
+  shipped `*.flf` files were Zip archives; unpacked to plaintext FIGlet fonts here—see
+  `fonts/THIRD_PARTY.md` for the file list and notes)
 
 Only fonts with licensing that allows usage and redistribution in this
 repository are included.
+
+From the JavE mirror, `Georgia11.flf` and `georgi16.flf` were not imported: they
+trace the commercial Georgia typeface and lack the usual in-file JavE permission line.
+The full list of fonts added from that mirror is recorded in `fonts/THIRD_PARTY.md`
+under “JavE mirror archive (zip-wrapped bundle)”.
 
 ---
 
@@ -15,7 +23,8 @@ From FIGlet 2.2.5 (`banner.flf`, `big.flf`, `block.flf`, `bubble.flf`,
 `digital.flf`, `ivrit.flf`, `lean.flf`, `mini.flf`, `mnemonic.flf`,
 `script.flf`, `shadow.flf`, `slant.flf`, `small.flf`, `smscript.flf`,
 `smshadow.flf`, `smslant.flf`, `standard.flf`, `term.flf`, `frango.flc`,
-`hz.flc`, `utf8.flc`, `jis0201.flc`):
+`hz.flc`, `utf8.flc`, `jis0201.flc`, `lower.flc`, `null.flc`, `rot13.flc`,
+`rot13.flf`, `upper.flc`):
 
 Copyright (C) 1991, 1993, 1994 Glenn Chappell and Ian Chai
 Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001 John Cowan

@@ -12,7 +12,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.6.1';
+    public const string VERSION = '2.6.2';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -269,6 +269,19 @@ final class Figlet
     public function getPrintDirection(): int
     {
         return $this->printDirection;
+    }
+
+    /** @return list<int> */
+    public function getLoadedCodepoints(): array
+    {
+        $keys = array_keys($this->font);
+        sort($keys);
+        return $keys;
+    }
+
+    public function getCharWidth(int $codepoint): ?int
+    {
+        return $this->fontCharWidths[$codepoint] ?? null;
     }
 
     public function loadFont(string $filename, bool $loadGerman = true): void

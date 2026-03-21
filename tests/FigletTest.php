@@ -253,6 +253,109 @@ final class FigletTest extends TestCase
         $this->assertSame(16, $figlet->getBaseline());
     }
 
+    public function testGetLoadedCodepoints(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $codepoints = $figlet->getLoadedCodepoints();
+        $this->assertContains(ord('A'), $codepoints);
+        $this->assertContains(ord('z'), $codepoints);
+        $this->assertSame($codepoints, array_unique($codepoints));
+        $sorted = $codepoints;
+        sort($sorted);
+        $this->assertSame($sorted, $codepoints);
+    }
+
+    public function testGetLoadedCodepointsContainsFullAsciiRange(): void
+    {
+        $font = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($font);
+        $codepoints = $figlet->getLoadedCodepoints();
+        for ($i = 32; $i < 127; $i++) {
+            $this->assertContains($i, $codepoints, "Missing ASCII codepoint $i");
+        }
+    }
+
+    public function testGetLoadedCodepointsIncludesGermanSlots(): void
+    {
+        $font = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($font);
+        $codepoints = $figlet->getLoadedCodepoints();
+        foreach ([196, 214, 220, 228, 246, 252, 223] as $gc) {
+            $this->assertContains($gc, $codepoints, "Missing German codepoint $gc");
+        }
+    }
+
+    public function testGetLoadedCodepointsIncludesExtendedChars(): void
+    {
+        $font = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [['code' => 0x0410, 'glyph' => 'A']],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($font);
+        $this->assertContains(0x0410, $figlet->getLoadedCodepoints());
+    }
+
+    public function testGetLoadedCodepointsResetOnReload(): void
+    {
+        $font1 = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [['code' => 0x0410, 'glyph' => 'A']],
+        ), '.flf');
+        $font2 = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($font1);
+        $this->assertContains(0x0410, $figlet->getLoadedCodepoints());
+
+        $figlet->loadFont($font2);
+        $this->assertNotContains(0x0410, $figlet->getLoadedCodepoints());
+    }
+
+    public function testGetCharWidth(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $this->assertIsInt($figlet->getCharWidth(ord('A')));
+        $this->assertGreaterThan(0, $figlet->getCharWidth(ord('A')));
+        $this->assertNull($figlet->getCharWidth(0x10FFFF));
+    }
+
+    public function testGetCharWidthReflectsGlyphSize(): void
+    {
+        $font = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [ord('W') => 'WIDE'],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($font);
+        $this->assertSame(4, $figlet->getCharWidth(ord('W')));
+        $this->assertSame(1, $figlet->getCharWidth(ord('A')));
+    }
+
+    public function testGetCharWidthGermanSlots(): void
+    {
+        $font = $this->writeTempFile($this->buildSimpleFont(
+            glyphs: [223 => 'SS'],
+        ), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($font);
+        $this->assertSame(2, $figlet->getCharWidth(223));
+    }
+
+    public function testGetCharWidthNullAfterReloadWithoutChar(): void
+    {
+        $font1 = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [['code' => 0x4E00, 'glyph' => 'HAN']],
+        ), '.flf');
+        $font2 = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($font1);
+        $this->assertSame(3, $figlet->getCharWidth(0x4E00));
+
+        $figlet->loadFont($font2);
+        $this->assertNull($figlet->getCharWidth(0x4E00));
+    }
+
     public function testLoadControlFileAndClearControlFiles(): void
     {
         $font = $this->writeTempFile($this->buildSimpleFont(), '.flf');
