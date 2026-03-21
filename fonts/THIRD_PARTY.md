@@ -31,6 +31,19 @@ Source:
 Licensing note:
 Each file includes an explicit permissive/public-domain style notice in its header.
 
+## emoji.tlf (project-built emoji TLF)
+
+Assets:
+`emoji.tlf`
+
+Source:
+Project-built; regenerate with `tools/build_emoji_font.py` if needed.
+
+Licensing note:
+MIT header embedded in the font comment (see rebuild script / font lines);
+glyph bitmaps follow whichever color emoji font the build environment uses when
+the maintenance script is run.
+
 ## TOIlet fonts
 
 Assets:
@@ -63,7 +76,7 @@ Assets:
 `heart_right.flf`, `hieroglyphs.flf`, `horizontalleft.flf`,
 `horizontalright.flf`, `impossible.flf`, `knob.flf`, `konto.flf`,
 `kontoslant.flf`, `lildevil.flf`, `lineblocks.flf`, `merlin1.flf`,
-`merlin2.flf`, `modular.flf`, `morse2.flf`, `muzzle.flf`, `puzzle.flf`,
+`merlin2.flf`, `modular.flf`, `muzzle.flf`, `puzzle.flf`,
 `rammstein.flf`, `rotated.flf`, `s-relief.flf`, `smallcaps.flf`,
 `soft.flf`, `starstrips.flf`, `swampland.flf`, `sweet.flf`, `test1.flf`,
 `train.flf`, `twisted.flf`, `varsity.flf`, `wetletter.flf`, `wow.flf`
@@ -83,7 +96,7 @@ Source:
 Not imported (left in the donor folder intentionally):
 `Georgia11.flf`, `georgi16.flf` — designed to mimic the commercial Georgia typeface; headers do not include the usual JavE redistribution line, so rights are unclear.
 
-Assets (176 fonts from this import; control files `lower.flc`, `null.flc`,
+Assets (175 fonts from this import; control files `lower.flc`, `null.flc`,
 `rot13.flc`, `rot13.flf`, `upper.flc` are listed under FIGlet 2.2.5 above):
 
 `1row.flf`, `3-d.flf`, `3x5.flf`, `4max.flf`, `5lineoblique.flf`, `acrobatic.flf`, `alligator.flf`,
@@ -95,7 +108,7 @@ Assets (176 fonts from this import; control files `lower.flc`, `null.flc`,
 `catwalk.flf`, `chunky.flf`, `coinstak.flf`, `colossal.flf`, `computer.flf`, `contessa.flf`,
 `contrast.flf`, `cosmic.flf`, `cosmike.flf`, `crawford.flf`, `cricket.flf`, `cyberlarge.flf`,
 `cybermedium.flf`, `cybersmall.flf`, `cygnet.flf`, `DANC4.flf`, `decimal.flf`, `defleppard.flf`,
-`diamond.flf`, `doh.flf`, `dosrebel.flf`, `dotmatrix.flf`, `double.flf`, `drpepper.flf`,
+`diamond.flf`, `doh.flf`, `dotmatrix.flf`, `double.flf`, `drpepper.flf`,
 `dwhistled.flf`, `eftichess.flf`, `eftifont.flf`, `eftipiti.flf`, `eftirobot.flf`, `eftitalic.flf`,
 `eftiwall.flf`, `eftiwater.flf`, `fender.flf`, `fourtops.flf`, `fraktur.flf`, `fuzzy.flf`,
 `glenyn.flf`, `goofy.flf`, `gothic.flf`, `gradient.flf`, `graffiti.flf`, `greek.flf`, `henry3d.flf`,
@@ -103,7 +116,7 @@ Assets (176 fonts from this import; control files `lower.flc`, `null.flc`,
 `isometric4.flf`, `italic.flf`, `jacky.flf`, `jazmine.flf`, `jerusalem.flf`, `katakana.flf`,
 `kban.flf`, `keyboard.flf`, `larry3d.flf`, `lcd.flf`, `letters.flf`, `linux.flf`, `lockergnome.flf`, `madrid.flf`, `marquee.flf`, `maxfour.flf`,
 `mike.flf`, `moscow.flf`, `mshebrew210.flf`,
-`nancyj-fancy.flf`, `nancyj-improved.flf`, `nancyj-underlined.flf`, `nancyj.flf`, `nipples.flf`,
+`nancyj-fancy.flf`, `nancyj-underlined.flf`, `nancyj.flf`, `nipples.flf`,
 `nscript.flf`, `ntgreek.flf`, `nvscript.flf`, `o8.flf`, `octal.flf`, `ogre.flf`,
 `oldbanner.flf`, `os2.flf`, `pawp.flf`, `peaks.flf`, `peaksslant.flf`, `pebbles.flf`, `pepper.flf`,
 `poison.flf`, `puffy.flf`, `rectangles.flf`, `red_phoenix.flf`, `relief.flf`, `relief2.flf`,

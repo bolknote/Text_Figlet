@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<phpmd-baseline>
+  <violation rule="PHPMD\Rule\UnusedPrivateMethod" file="src/ControlFile.php" method="parse"/>
+  <violation rule="PHPMD\Rule\Naming\ShortVariable" file="src/Row.php"/>
+  <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="vSmushChar"/>
+  <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="applyHSmushRules"/>
+</phpmd-baseline>

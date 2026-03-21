@@ -14,7 +14,7 @@
 
     <rule ref="rulesets/codesize.xml/CyclomaticComplexity">
         <properties>
-            <property name="reportLevel" value="20"/>
+            <property name="reportLevel" value="19"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/NPathComplexity">
@@ -25,28 +25,28 @@
     <rule ref="rulesets/codesize.xml/ExcessiveMethodLength"/>
     <rule ref="rulesets/codesize.xml/ExcessiveClassLength">
         <properties>
-            <property name="minimum" value="1400"/>
+            <property name="minimum" value="1260"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/ExcessiveClassComplexity">
         <properties>
-            <property name="maximum" value="320"/>
+            <property name="maximum" value="280"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/ExcessiveParameterList"/>
     <rule ref="rulesets/codesize.xml/TooManyFields">
         <properties>
-            <property name="maxfields" value="25"/>
+            <property name="maxfields" value="23"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/TooManyMethods">
         <properties>
-            <property name="maxmethods" value="55"/>
+            <property name="maxmethods" value="45"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/TooManyPublicMethods">
         <properties>
-            <property name="maxmethods" value="20"/>
+            <property name="maxmethods" value="15"/>
         </properties>
     </rule>
     <rule ref="rulesets/codesize.xml/ExcessivePublicCount"/>
@@ -58,7 +58,7 @@
     </rule>
     <rule ref="rulesets/design.xml/CouplingBetweenObjects">
         <properties>
-            <property name="maximum" value="15"/>
+            <property name="maximum" value="21"/>
         </properties>
     </rule>
 
@@ -67,7 +67,7 @@
     </rule>
     <rule ref="rulesets/naming.xml/ShortVariable">
         <properties>
-            <property name="exceptions" value="$i,$j,$k,$x,$y,$ch"/>
+            <property name="exceptions" value="i,j,k,x,y,ch,fg,bg,to"/>
         </properties>
     </rule>
 

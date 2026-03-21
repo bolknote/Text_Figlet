@@ -508,4 +508,35 @@ final class ControlFileTest extends TestCase
         $result = $cf->apply("\x1b\x28");
         $this->assertSame('', $result);
     }
+
+    public function testMissingFileThrowsException(): void
+    {
+        $path = $this->writeTempFile('test', '.flc');
+        chmod($path, 0000);
+        $this->expectException(ControlFileException::class);
+        $this->expectExceptionMessage('Cannot read control file');
+        set_error_handler(static fn(): bool => true);
+        try {
+            ControlFile::load($path);
+        } finally {
+            restore_error_handler();
+            chmod($path, 0644);
+        }
+    }
+
+    public function testMissingGzFileThrowsException(): void
+    {
+        $path = $this->writeTempFile('test', '.flc.gz');
+        chmod($path, 0000);
+        $this->expectException(ControlFileException::class);
+        $this->expectExceptionMessage('Cannot read control file');
+        set_error_handler(static fn(): bool => true);
+        try {
+            ControlFile::load($path);
+        } finally {
+            restore_error_handler();
+            chmod($path, 0644);
+        }
+    }
+
 }

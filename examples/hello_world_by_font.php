@@ -63,6 +63,10 @@ function detectLanguage(Figlet $figlet): string
         if (isSingleSymbolGlyphFont($figlet)) {
             return 'cyrillic-style';
         }
+        // e.g. makisupa: Unicode Cyrillic slots reuse the same Latin-style glyphs (А/Б/В… identical).
+        if ($figlet->render('А') === $figlet->render('Б')) {
+            return 'cyrillic-latin-glyphs';
+        }
         return 'cyrillic';
     }
     if ($hasKatakana) {
@@ -76,6 +80,7 @@ function detectLanguage(Figlet $figlet): string
     }
 
     $commentMarkers = [
+        'emoji'           => ['emoji'],
         'cyrillic-mapped' => ['cyrillic', 'moscow'],
         'greek-mapped'    => ['ntgreek', 'greek'],
         'katakana-mapped' => ['katakana'],
@@ -83,6 +88,7 @@ function detectLanguage(Figlet $figlet): string
         'hieroglyphs'     => ['hieroglyph'],
         'cherokee'        => ['cherokee', 'tsalagi', 'syllabry'],
         'runic'           => ['futhark', 'runic', 'rune'],
+        'braille'         => ['braille'],
         'morse'           => ['morse code', 'morse'],
         'encoding'        => ['binary', 'octal', 'decimal', 'hexadecimal'],
         'chess'           => ['chessboard-style glyph font', 'chess'],
@@ -177,8 +183,9 @@ $greetings = [
     'hebrew'         => ['שלום', 'שלום / Shalom (Unicode Hebrew)'],
     'hebrew-mapped'  => ['akhun', 'שלום / Shalom (keyboard-mapped RTL)'],
     'chinese'        => ['你好', 'Nǐ hǎo'],
-    'cyrillic'       => ['Привет', 'Privet (Cyrillic input)'],
-    'cyrillic-style' => ['Privet', 'Privet (Cyrillic-style output, Latin input)'],
+    'cyrillic'             => ['Привет', 'Privet (Cyrillic input)'],
+    'cyrillic-latin-glyphs' => ['Hello', 'Latin sample — Cyrillic text (e.g. Привет) does not spell words here; glyphs are Latin letter shapes'],
+    'cyrillic-style'       => ['Privet', 'Privet (Cyrillic-style output, Latin input)'],
     'runic'          => ['EK THEK HAILISO', 'ᛖᚲ ᚦᛖᚲ ᚺᚨᛁᛚᛁᛊᛟ (Elder Futhark)'],
     'morse'          => ['Hello', 'Hello (Morse)'],
     'braille'        => ['Hello', 'Hello (Braille)'],
@@ -192,6 +199,7 @@ $greetings = [
     'cherokee'           => ['q&z', 'ᎣᏏᏲ / Osiyo (Cherokee syllabary, Joan Touzet keymap)'],
     'encoding'           => ['Hi', 'Hi (numeric encoding)'],
     'chess'              => ['CHECKMATE', 'Chess-themed font'],
+    'emoji'              => ["\u{2764}\u{1F525}\u{2B50}\u{1F308}\u{1F34E}", '❤️🔥⭐🌈🍎 (color emoji at Unicode codepoints)'],
     'latin+german'           => ['grüß Gott', 'grüß Gott (Latin + German)'],
     'latin+german-partial'   => ['Hello', 'Hello (Latin + partial German)'],
     'latin-rtl'              => ['olleH', 'olleH (Latin, RTL)'],

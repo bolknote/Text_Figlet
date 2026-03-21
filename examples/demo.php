@@ -440,6 +440,78 @@ echo "Code 2 (font dir):   " . $figlet->getInfoCode(2) . "\n";
 echo "Code 3 (font name):  " . $figlet->getInfoCode(3) . "\n";
 echo "Code 4 (term width): " . $figlet->getInfoCode(4) . "\n";
 
+// ============================================================
+section('22. UNICODE COMBINING CHARACTERS (NFC normalization)');
+
+$figlet = new Figlet();
+$figlet->loadFont($fontsDir . 'standard.flf');
+
+$precomposed = "\xC3\xA9";
+$decomposed = "e\xCC\x81";
+
+echo "Precomposed é: " . codePointString($precomposed) . "\n";
+echo "Decomposed é:  " . codePointString($decomposed) . " (e + combining acute)\n\n";
+
+$preResult = $figlet->render($precomposed);
+$decResult = $figlet->render($decomposed);
+
+if (class_exists(\Normalizer::class)) {
+    echo "ext-intl is available — NFC normalization active\n";
+    echo "Same rendering: " . ($preResult === $decResult ? "YES" : "NO") . "\n\n";
+} else {
+    echo "ext-intl is NOT available — NFC normalization disabled\n";
+    echo "Same rendering: " . ($preResult === $decResult ? "YES" : "NO (expected)") . "\n\n";
+}
+
+subsection('Rendering "café" with combining accent');
+echo $figlet->render("cafe\xCC\x81") . "\n";
+
+// ============================================================
+section('23. UNICODE BIDIRECTIONAL ALGORITHM');
+
+echo "BiDi support: ";
+if (class_exists(\Com\Tecnick\Unicode\Bidi::class)) {
+    echo "YES (tecnickcom/tc-lib-unicode installed)\n\n";
+
+    subsection('BiDi reordering at string level');
+    $mixed = "Hello שלום!";
+    $bidi = new \Com\Tecnick\Unicode\Bidi($mixed);
+    $reordered = $bidi->getString();
+    echo "Input string:    $mixed\n";
+    echo "Input order:     " . codePointString($mixed) . "\n";
+    echo "Visual order:    " . codePointString((string) $reordered) . "\n";
+    echo "Hebrew שלום (U+05E9..U+05DD) reversed to םולש (U+05DD..U+05E9) for LTR display\n\n";
+    echo "BiDi reordering is applied before rendering, so LTR fonts with\n";
+    echo "mixed-script glyphs will display both scripts in correct visual order.\n";
+} else {
+    echo "NOT AVAILABLE\n";
+    echo "Install tecnickcom/tc-lib-unicode to enable:\n";
+    echo "  composer require tecnickcom/tc-lib-unicode\n";
+}
+
+// ============================================================
+section('24. COLOR EMOJI FONT (TLF with embedded ANSI colors)');
+
+$figlet = new Figlet();
+$figlet->loadFont($fontsDir . 'emoji.tlf');
+
+echo "Font: emoji.tlf (gzip-compressed body, .tlf extension; 256-color ANSI)\n";
+echo "Emoji are at their real Unicode codepoints, not mapped to ASCII.\n\n";
+
+subsection('Hearts: ❤️💗💙💚💛💜');
+echo $figlet->render("\u{2764}\u{1F497}\u{1F499}\u{1F49A}\u{1F49B}\u{1F49C}") . "\n";
+
+subsection('Nature: 🔥⭐🌈⚡☀️🌙');
+echo $figlet->render("\u{1F525}\u{2B50}\u{1F308}\u{26A1}\u{2600}\u{1F319}") . "\n";
+
+subsection('Fruit: 🍎🍊🍋🍌🍇🍉');
+echo $figlet->render("\u{1F34E}\u{1F34A}\u{1F34B}\u{1F34C}\u{1F347}\u{1F349}") . "\n";
+
+subsection('HTML output');
+$html = $figlet->render("\u{2764}\u{1F525}\u{2B50}", ExportFormat::Html);
+echo "HTML length: " . strlen($html) . " bytes\n";
+echo "Contains <span style=\"color:...\">: " . (str_contains($html, 'style="color:') ? 'YES' : 'NO') . "\n";
+
 echo "\n" . str_repeat('=', 70) . "\n";
 echo "  Demo complete!\n";
 echo str_repeat('=', 70) . "\n";

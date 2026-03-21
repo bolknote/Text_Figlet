@@ -8,8 +8,8 @@ namespace Bolk\TextFiglet;
 final class FilterEngine
 {
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     public static function apply(Filter $filter, array $figure): array
     {
@@ -82,24 +82,9 @@ final class FilterEngine
         ['█', '▄', '▄', '█', '▀', '█', '█', '▀'],
     ];
 
-    private static function len(string $text): int
-    {
-        return mb_strlen($text, 'UTF-8');
-    }
-
-    private static function charAt(string $text, int $pos): string
-    {
-        return mb_substr($text, $pos, 1, 'UTF-8');
-    }
-
-    private static function slice(string $text, int $start, ?int $length = null): string
-    {
-        return mb_substr($text, $start, $length, 'UTF-8');
-    }
-
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function crop(array $figure): array
     {
@@ -108,8 +93,8 @@ final class FilterEngine
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function cropVertical(array $figure): array
     {
@@ -117,7 +102,7 @@ final class FilterEngine
         $bottom = -1;
 
         foreach ($figure as $idx => $row) {
-            if (trim($row) !== '') {
+            if (trim($row->toText()) !== '') {
                 if ($top === -1) {
                     $top = $idx;
                 }
@@ -126,15 +111,15 @@ final class FilterEngine
         }
 
         if ($top === -1) {
-            return [''];
+            return [new Row([])];
         }
 
         return array_slice($figure, $top, $bottom - $top + 1);
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function cropHorizontal(array $figure): array
     {
@@ -142,18 +127,18 @@ final class FilterEngine
         $maxRight = 0;
 
         foreach ($figure as $row) {
-            $rowLen = self::len($row);
+            $rowLen = $row->length();
             if ($rowLen === 0) {
                 continue;
             }
 
             $left = 0;
-            while ($left < $rowLen && self::charAt($row, $left) === ' ') {
+            while ($left < $rowLen && $row->charAt($left) === ' ') {
                 $left++;
             }
 
             $right = $rowLen;
-            while ($right > 0 && self::charAt($row, $right - 1) === ' ') {
+            while ($right > 0 && $row->charAt($right - 1) === ' ') {
                 $right--;
             }
 
@@ -169,59 +154,57 @@ final class FilterEngine
 
         $result = [];
         foreach ($figure as $row) {
-            $result[] = self::slice($row, $minLeft, $maxRight - $minLeft);
+            $result[] = $row->slice($minLeft, $maxRight - $minLeft);
         }
 
         return $result;
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function flip(array $figure): array
     {
         $result = [];
         foreach ($figure as $row) {
-            $rowLen = self::len($row);
-            $reversed = '';
+            $rowLen = $row->length();
+            $cells = [];
             for ($i = $rowLen - 1; $i >= 0; $i--) {
-                $char = self::charAt($row, $i);
-                $reversed .= self::MIRROR_CHARS[$char] ?? $char;
+                $cell = $row->cellAt($i);
+                $mirrorChar = self::MIRROR_CHARS[$cell->char] ?? $cell->char;
+                $cells[] = new Cell($mirrorChar, $cell->fg, $cell->bg);
             }
-            $result[] = $reversed;
+            $result[] = new Row($cells);
         }
 
         return $result;
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function flop(array $figure): array
     {
         $result = [];
         foreach (array_reverse($figure) as $row) {
-            $rowLen = self::len($row);
-            $mapped = '';
+            $rowLen = $row->length();
+            $cells = [];
             for ($i = 0; $i < $rowLen; $i++) {
-                $char = self::charAt($row, $i);
-                $mapped .= self::FLOP_CHARS[$char] ?? $char;
+                $cell = $row->cellAt($i);
+                $mappedChar = self::FLOP_CHARS[$cell->char] ?? $cell->char;
+                $cells[] = new Cell($mappedChar, $cell->fg, $cell->bg);
             }
-            $result[] = $mapped;
+            $result[] = new Row($cells);
         }
 
         return $result;
     }
 
     /**
-     * Pair-based 90° rotation matching libcaca's caca_rotate_right.
-     * Two horizontal characters map to one vertical position.
-     * New dimensions: width = height * 2, height = ceil(width / 2).
-     *
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function rotateRight(array $figure): array
     {
@@ -229,8 +212,8 @@ final class FilterEngine
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function rotateLeft(array $figure): array
     {
@@ -238,15 +221,15 @@ final class FilterEngine
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function rotatePairBased(array $figure, string $direction): array
     {
         $grid = self::toGrid($figure);
         $height = count($grid);
         if ($height === 0) {
-            return [''];
+            return [new Row([])];
         }
         $width = count($grid[0]);
         $halfWidth = intdiv($width + 1, 2);
@@ -254,16 +237,16 @@ final class FilterEngine
         $newWidth = $height * 2;
         $newHeight = $halfWidth;
 
-        /** @var array<int, string> $flat */
-        $flat = array_fill(0, $newWidth * $newHeight, ' ');
+        $space = new Cell(' ');
+        /** @var array<int, Cell> $flat */
+        $flat = array_fill(0, $newWidth * $newHeight, $space);
 
         for ($row = 0; $row < $height; $row++) {
             for ($col = 0; $col < $halfWidth; $col++) {
-                $pair = [
-                    $grid[$row][$col * 2],
-                    ($col * 2 + 1 < $width) ? $grid[$row][$col * 2 + 1] : ' ',
-                ];
+                $cell0 = $grid[$row][$col * 2];
+                $cell1 = ($col * 2 + 1 < $width) ? $grid[$row][$col * 2 + 1] : $space;
 
+                $pair = [$cell0->char, $cell1->char];
                 self::transformPair($pair, $direction);
 
                 if ($direction === 'right') {
@@ -272,18 +255,18 @@ final class FilterEngine
                     $dest = ($height * ($halfWidth - 1 - $col) + $row) * 2;
                 }
 
-                $flat[$dest] = $pair[0];
-                $flat[$dest + 1] = $pair[1];
+                $flat[$dest] = new Cell($pair[0], $cell0->fg, $cell0->bg);
+                $flat[$dest + 1] = new Cell($pair[1], $cell1->fg, $cell1->bg);
             }
         }
 
         $lines = [];
         for ($row = 0; $row < $newHeight; $row++) {
-            $line = '';
+            $cells = [];
             for ($col = 0; $col < $newWidth; $col++) {
-                $line .= $flat[$row * $newWidth + $col];
+                $cells[] = $flat[$row * $newWidth + $col];
             }
-            $lines[] = $line;
+            $lines[] = new Row($cells);
         }
 
         return $lines;
@@ -324,108 +307,99 @@ final class FilterEngine
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<list<string>>
+     * @param list<Row> $figure
+     * @return list<list<Cell>>
      */
     private static function toGrid(array $figure): array
     {
         $maxWidth = 0;
         foreach ($figure as $row) {
-            $maxWidth = max($maxWidth, self::len($row));
+            $maxWidth = max($maxWidth, $row->length());
         }
 
+        $space = new Cell(' ');
         $grid = [];
         foreach ($figure as $row) {
-            $chars = [];
-            $rowLen = self::len($row);
+            $cells = [];
+            $rowLen = $row->length();
             for ($i = 0; $i < $maxWidth; $i++) {
-                $chars[] = $i < $rowLen ? self::charAt($row, $i) : ' ';
+                $cells[] = $i < $rowLen ? $row->cellAt($i) : $space;
             }
-            $grid[] = $chars;
+            $grid[] = $cells;
         }
 
         return $grid;
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function border(array $figure): array
     {
         $maxWidth = 0;
         foreach ($figure as $row) {
-            $maxWidth = max($maxWidth, self::len($row));
+            $maxWidth = max($maxWidth, $row->length());
         }
 
-        $result = ['┌' . str_repeat('─', $maxWidth) . '┐'];
+        $topBorder = Row::fromString('┌' . str_repeat('─', $maxWidth) . '┐');
+        $bottomBorder = Row::fromString('└' . str_repeat('─', $maxWidth) . '┘');
+        $left = Row::fromString('│');
+        $right = Row::fromString('│');
+
+        $result = [$topBorder];
         foreach ($figure as $row) {
-            $pad = $maxWidth - self::len($row);
-            $result[] = '│' . $row . str_repeat(' ', $pad) . '│';
+            $result[] = $left->append($row->pad($maxWidth))->append($right);
         }
-        $result[] = '└' . str_repeat('─', $maxWidth) . '┘';
+        $result[] = $bottomBorder;
 
         return $result;
     }
 
-    /**
-     * @param list<string> $colors
-     */
-    private static function colorize(string $row, int $offset, array $colors, int $divisor): string
-    {
-        $count = count($colors);
-        $rowLen = self::len($row);
-        $colored = '';
-        $hasColor = false;
-        $lastColor = '';
-
-        for ($col = 0; $col < $rowLen; $col++) {
-            $char = self::charAt($row, $col);
-            if ($char !== ' ') {
-                $idx = intdiv($col, $divisor) + $offset;
-                $key = (($idx % $count) + $count) % $count;
-                $color = $colors[$key];
-                if ($color !== $lastColor) {
-                    $colored .= $color;
-                    $lastColor = $color;
-                }
-                $colored .= $char;
-                $hasColor = true;
-            } else {
-                $colored .= $char;
-            }
-        }
-
-        return $hasColor ? $colored . "\e[0m" : $colored;
-    }
+    private const RAINBOW_PALETTE = [13, 9, 11, 10, 14, 12];
+    private const METAL_PALETTE = [12, 4, 7, 8];
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function rainbow(array $figure): array
     {
-        $palette = ["\e[95m", "\e[91m", "\e[93m", "\e[92m", "\e[96m", "\e[94m"];
-        $result = [];
-
-        foreach ($figure as $row => $line) {
-            $result[] = self::colorize($line, $row, $palette, 2);
-        }
-
-        return $result;
+        return self::colorize($figure, self::RAINBOW_PALETTE, 2, false);
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private static function metal(array $figure): array
     {
-        $palette = ["\e[94m", "\e[34m", "\e[37m", "\e[90m"];
+        return self::colorize($figure, self::METAL_PALETTE, 8, true);
+    }
+
+    /**
+     * @param list<Row> $figure
+     * @param list<int> $palette
+     * @return list<Row>
+     */
+    private static function colorize(array $figure, array $palette, int $divisor, bool $halfRow): array
+    {
+        $count = count($palette);
         $result = [];
 
-        foreach ($figure as $row => $line) {
-            $result[] = self::colorize($line, intdiv($row, 2), $palette, 8);
+        foreach ($figure as $rowIdx => $row) {
+            $offset = $halfRow ? intdiv($rowIdx, 2) : $rowIdx;
+            $cells = [];
+            foreach ($row->cells() as $col => $cell) {
+                if ($cell->char !== ' ') {
+                    $idx = intdiv($col, $divisor) + $offset;
+                    $key = (($idx % $count) + $count) % $count;
+                    $cells[] = new Cell($cell->char, $palette[$key], $cell->bg);
+                } else {
+                    $cells[] = $cell;
+                }
+            }
+            $result[] = new Row($cells);
         }
 
         return $result;

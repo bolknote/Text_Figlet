@@ -14,7 +14,9 @@
     },
     "suggest": {
         "ext-zlib": "Required to load gzip-compressed fonts (.flf.gz)",
-        "ext-zip": "Required to load ZIP-compressed fonts"
+        "ext-zip": "Required to load ZIP-compressed fonts",
+        "ext-intl": "Recommended for Unicode normalization (combining characters)",
+        "tecnickcom/tc-lib-unicode": "Optional: enables Unicode Bidirectional Algorithm for mixed LTR/RTL text"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.0",
@@ -34,15 +36,16 @@
         }
     },
     "scripts": {
+        "test": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/phpunit --configuration config/phpunit.xml",
         "analyze": [
             "@phpstan",
             "@psalm",
             "@phpmd",
             "@rector"
         ],
-        "phpstan": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/phpstan analyse --level=max --memory-limit=1G src tests",
-        "psalm": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/psalm --config=psalm.xml --no-cache --show-info=false",
-        "phpmd": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/phpmd src text phpmd.xml",
-        "rector": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/rector process --config=rector.php --dry-run"
+        "phpstan": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/phpstan analyse --configuration config/phpstan.neon --memory-limit=1G",
+        "psalm": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/psalm --config=config/psalm.xml --no-cache --show-info=false",
+        "phpmd": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/phpmd src text config/phpmd.xml --baseline-file config/phpmd.baseline.xml --cache --cache-file build/.phpmd.result-cache.php",
+        "rector": "php -d error_reporting='E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED' vendor/bin/rector process --config=config/rector.php --dry-run"
     }
 }

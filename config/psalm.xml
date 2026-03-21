@@ -6,17 +6,17 @@
     findUnusedBaselineEntry="true"
 >
     <projectFiles>
-        <directory name="src"/>
-        <directory name="tests"/>
+        <directory name="../src"/>
+        <directory name="../tests"/>
         <ignoreFiles>
-            <directory name="vendor"/>
-            <directory name="build"/>
+            <directory name="../vendor"/>
+            <directory name="../build"/>
         </ignoreFiles>
     </projectFiles>
     <issueHandlers>
         <UnusedClass>
             <errorLevel type="suppress">
-                <directory name="tests"/>
+                <directory name="../tests"/>
             </errorLevel>
         </UnusedClass>
         <UndefinedMethod>
@@ -29,21 +29,21 @@
                 <referencedProperty name="FFI\CData::$ws_col"/>
             </errorLevel>
         </UndefinedPropertyFetch>
-        <PossiblyNullArgument>
+        <MixedAssignment>
             <errorLevel type="suppress">
-                <referencedFunction name="FFI::addr"/>
+                <file name="../tests/CellRowTest.php"/>
+                <file name="../tests/FigletTest.php"/>
             </errorLevel>
-        </PossiblyNullArgument>
-        <MixedReturnStatement>
+        </MixedAssignment>
+        <MixedArgument>
             <errorLevel type="suppress">
-                <file name="src/Figlet.php"/>
+                <file name="../tests/FigletTest.php"/>
             </errorLevel>
-        </MixedReturnStatement>
-        <InvalidArrayOffset>
+        </MixedArgument>
+        <MixedArgumentTypeCoercion>
             <errorLevel type="suppress">
-                <file name="src/Renderer.php"/>
-                <file name="src/FilterEngine.php"/>
+                <file name="../tests/FigletTest.php"/>
             </errorLevel>
-        </InvalidArrayOffset>
+        </MixedArgumentTypeCoercion>
     </issueHandlers>
 </psalm>

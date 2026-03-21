@@ -1,7 +1,7 @@
-*.tgz
-/vendor/
+__pycache__/
 /build/
+/tools/emoji_render_cache/
+/vendor/
 composer.lock
-.phpunit.result.cache
-.phpunit.cache/
 .DS_Store
+config/.phpunit.result.cache

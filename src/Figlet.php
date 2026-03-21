@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet;
 
+use Throwable;
+use ValueError;
 use FFI;
 use FFI\Exception as FFIException;
+use Normalizer;
 use ZipArchive;
+use Com\Tecnick\Unicode\Bidi;
 use Bolk\TextFiglet\Exception\FontLoadException;
 use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.6.3';
+    public const string VERSION = '2.7.0';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -23,7 +27,7 @@ final class Figlet
     protected string $hardblank = '';
     protected bool $isTlf = false;
 
-    /** @var array<int, list<string>> */
+    /** @var array<int, list<Row>> */
     protected array $font = [];
     /** @var array<int, int> */
     protected array $fontCharWidths = [];
@@ -50,44 +54,7 @@ final class Figlet
 
     private string $fontName = '';
 
-    private const HIERARCHY_CLASSES = [
-        '|' => 1, '/' => 2, '\\' => 2, '[' => 3, ']' => 3,
-        '{' => 4, '}' => 4, '(' => 5, ')' => 5, '<' => 6, '>' => 6,
-    ];
 
-    private const OPPOSITE_PAIRS = [
-        '[]' => '|', '][' => '|', '{}' => '|', '}{' => '|', '()' => '|', ')(' => '|',
-    ];
-
-    private const BIG_X_MAP = [
-        '/\\' => '|', '\\/' => 'Y', '><' => 'X',
-    ];
-
-    private function charLength(string $text): int
-    {
-        return mb_strlen($text, 'UTF-8');
-    }
-
-    private function charAt(string $text, int $position): string
-    {
-        return mb_substr($text, $position, 1, 'UTF-8');
-    }
-
-    private function charSlice(string $text, int $start, ?int $length = null): string
-    {
-        return mb_substr($text, $start, $length, 'UTF-8');
-    }
-
-    private function replaceCharAt(string $text, int $position, string $char): string
-    {
-        return mb_substr($text, 0, $position, 'UTF-8') . $char . mb_substr($text, $position + 1, null, 'UTF-8');
-    }
-
-    private function latin1ToUtf8(string $input): string
-    {
-        /** @var string */
-        return mb_convert_encoding($input, 'UTF-8', 'ISO-8859-1');
-    }
 
     public function setHorizontalLayout(LayoutMode $mode): self
     {
@@ -109,6 +76,17 @@ final class Figlet
     public function getVerticalLayout(): LayoutMode
     {
         return $this->vLayoutOverride ?? $this->vLayout;
+    }
+
+    private function buildSmushEngine(): SmushEngine
+    {
+        return new SmushEngine(
+            $this->hardblank,
+            $this->hSmushRules,
+            $this->vSmushRules,
+            $this->printDirection,
+            $this->hLayoutOverride ?? $this->hLayout,
+        );
     }
 
     public function setWidth(int $width): self
@@ -202,10 +180,8 @@ final class Figlet
 
             // Probe terminal width via standard POSIX fds: stdout (1), stderr (2), stdin (0).
             foreach ([1, 2, 0] as $fd) {
-                /** @phpstan-ignore method.notFound, property.notFound */
                 if ($ffi->ioctl($fd, $tiocgwinsz, FFI::addr($win)) !== -1 && $win->ws_col > 0) {
-                    /** @phpstan-ignore return.type */
-                    return $win->ws_col;
+                    return (int) $win->ws_col;
                 }
             }
         } catch (FFIException) {
@@ -293,22 +269,9 @@ final class Figlet
         if (!file_exists($filename)) {
             $fontDir = __DIR__ . '/../fonts/';
 
-            if (!str_contains($filename, '/') && file_exists($fontDir . $filename)) {
-                $filename = $fontDir . $filename;
-            } elseif (!str_contains($filename, '.') && file_exists($filename . '.flf')) {
-                $filename .= '.flf';
-            } elseif (!str_contains($filename, '.') && file_exists($filename . '.tlf')) {
-                $filename .= '.tlf';
-            } elseif (!str_contains($filename, '/') && !str_contains($filename, '.')) {
-                if (file_exists($fontDir . $filename . '.flf')) {
-                    $filename = $fontDir . $filename . '.flf';
-                } elseif (file_exists($fontDir . $filename . '.tlf')) {
-                    $filename = $fontDir . $filename . '.tlf';
-                } else {
-                    throw new FontNotFoundException(
-                        'Figlet font file "' . $filename . '" cannot be found'
-                    );
-                }
+            $resolved = $this->resolveFont($filename, $fontDir);
+            if ($resolved !== null) {
+                $filename = $resolved;
             } else {
                 throw new FontNotFoundException(
                     'Figlet font file "' . $filename . '" cannot be found'
@@ -351,6 +314,36 @@ final class Figlet
         } finally {
             fclose($stream);
         }
+    }
+
+    private const FONT_EXTENSIONS = ['.flf', '.tlf', '.flf.gz', '.tlf.gz'];
+
+    private function resolveFont(string $filename, string $fontDir): ?string
+    {
+        if (!str_contains($filename, '/') && file_exists($fontDir . $filename)) {
+            return $fontDir . $filename;
+        }
+
+        $hasExt = str_contains($filename, '.');
+        $hasDir = str_contains($filename, '/');
+
+        if (!$hasExt) {
+            foreach (self::FONT_EXTENSIONS as $ext) {
+                if (file_exists($filename . $ext)) {
+                    return $filename . $ext;
+                }
+            }
+        }
+
+        if (!$hasDir && !$hasExt) {
+            foreach (self::FONT_EXTENSIONS as $ext) {
+                if (file_exists($fontDir . $filename . $ext)) {
+                    return $fontDir . $filename . $ext;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** @return resource */
@@ -444,9 +437,13 @@ final class Figlet
             if ($letter === false) {
                 return;
             }
-            if (trim(implode('', $letter)) !== '') {
+            $text = '';
+            foreach ($letter as $r) {
+                $text .= $r->toText();
+            }
+            if (trim($text) !== '') {
                 $this->font[$code] = $letter;
-                $this->fontCharWidths[$code] = $letter !== [] ? $this->charLength($letter[0]) : 0;
+                $this->fontCharWidths[$code] = $letter !== [] ? $letter[0]->length() : 0;
             }
         }
     }
@@ -470,6 +467,33 @@ final class Figlet
         }
     }
 
+    private function resolveCharCode(int $code): int
+    {
+        if (isset($this->font[$code]) || $code <= 0xFF
+            || !str_contains($this->fontComment, 'GB2312')) {
+            return $code;
+        }
+
+        try {
+            $chr = mb_chr($code);
+            if ($chr === false) {
+                return $code;
+            }
+            $euc = mb_convert_encoding($chr, 'EUC-CN', 'UTF-8');
+            if (!is_string($euc)) {
+                return $code;
+            }
+        } catch (ValueError) {
+            return $code;
+        }
+
+        $bdf = strlen($euc) === 2
+            ? ((ord($euc[0]) - 0x80) << 8) | (ord($euc[1]) - 0x80)
+            : $code;
+
+        return isset($this->font[$bdf]) ? $bdf : $code;
+    }
+
     private function parseCharCode(string $code): int
     {
         if (preg_match('/^0x/i', $code)) {
@@ -489,26 +513,27 @@ final class Figlet
             return;
         }
         $this->font[$code] = $letter;
-        $this->fontCharWidths[$code] = $letter !== [] ? $this->charLength($letter[0]) : 0;
+        $this->fontCharWidths[$code] = $letter !== [] ? $letter[0]->length() : 0;
     }
 
     private function deriveLayoutModes(): void
     {
-        if ($this->fullLayout >= 0) {
-            $this->hSmushRules = $this->fullLayout & 63;
-            $this->vSmushRules = ($this->fullLayout >> 8) & 31;
+        if ($this->fullLayout !== -1) {
+            $bits = $this->fullLayout & 0xFFFFFFFF;
+            $this->hSmushRules = $bits & 63;
+            $this->vSmushRules = ($bits >> 8) & 31;
 
-            if (($this->fullLayout & 128) !== 0) {
+            if (($bits & 128) !== 0) {
                 $this->hLayout = LayoutMode::Smushing;
-            } elseif (($this->fullLayout & 64) !== 0) {
+            } elseif (($bits & 64) !== 0) {
                 $this->hLayout = LayoutMode::Fitting;
             } else {
                 $this->hLayout = LayoutMode::FullSize;
             }
 
-            if (($this->fullLayout & 16384) !== 0) {
+            if (($bits & 16384) !== 0) {
                 $this->vLayout = LayoutMode::Smushing;
-            } elseif (($this->fullLayout & 8192) !== 0) {
+            } elseif (($bits & 8192) !== 0) {
                 $this->vLayout = LayoutMode::Fitting;
             } else {
                 $this->vLayout = LayoutMode::FullSize;
@@ -522,7 +547,7 @@ final class Figlet
                 $this->hSmushRules = 0;
             } else {
                 $this->hLayout = LayoutMode::Smushing;
-                $this->hSmushRules = $this->oldLayout & 63;
+                $this->hSmushRules = $this->oldLayout & 31;
             }
             $this->vLayout = LayoutMode::FullSize;
             $this->vSmushRules = 0;
@@ -539,11 +564,21 @@ final class Figlet
             $str = $this->applyParagraphMode($str);
         }
 
+        if (class_exists(Normalizer::class)) {
+            $normalized = Normalizer::normalize($str, Normalizer::FORM_C);
+            if (is_string($normalized)) {
+                $str = $normalized;
+            }
+        }
+
+        $str = $this->applyBidi($str);
+
+        $eng = $this->buildSmushEngine();
         $inputLines = explode("\n", $str);
         $figures = [];
 
         foreach ($inputLines as $inputLine) {
-            foreach ($this->renderLineWithWrapping($inputLine) as $fig) {
+            foreach ($this->renderLineWithWrapping($eng, $inputLine) as $fig) {
                 $figures[] = $fig;
             }
         }
@@ -557,27 +592,26 @@ final class Figlet
         $combined = $figures[0];
         $figCount = count($figures);
         for ($i = 1; $i < $figCount; $i++) {
-            $combined = $this->combineFiguresVertically($combined, $figures[$i], $effectiveVLayout);
+            $combined = $this->combineFiguresVertically($eng, $combined, $figures[$i], $effectiveVLayout);
         }
 
         $combined = $this->applyJustification($combined);
 
-        foreach ($combined as &$row) {
-            $row = str_replace($this->hardblank, ' ', $row);
+        foreach ($combined as $idx => $row) {
+            $combined[$idx] = $row->replaceChar($this->hardblank, ' ');
         }
-        unset($row);
 
         $combined = $this->applyFilters($combined);
 
         return Renderer::export($combined, $format);
     }
 
-    /** @param list<list<string>> $figures */
+    /** @param list<list<Row>> $figures */
     private function allEmpty(array $figures): bool
     {
         foreach ($figures as $fig) {
             foreach ($fig as $row) {
-                if (trim($row) !== '') {
+                if (trim($row->toText()) !== '') {
                     return false;
                 }
             }
@@ -585,17 +619,17 @@ final class Figlet
         return true;
     }
 
-    /** @return list<list<string>> */
-    private function renderLineWithWrapping(string $line): array
+    /** @return list<list<Row>> */
+    private function renderLineWithWrapping(SmushEngine $eng, string $line): array
     {
         $codes = $this->splitString($line);
 
         if ($codes === []) {
-            return [array_fill(0, $this->height, '')];
+            return [array_fill(0, $this->height, new Row([]))];
         }
 
         if ($this->outputWidth === null) {
-            return [$this->renderCodes($codes)];
+            return [$this->renderCodes($eng, $codes)];
         }
 
         $figures = [];
@@ -610,7 +644,7 @@ final class Figlet
                 $lastSpaceIdx = count($current) - 1;
             }
 
-            $rendered = $this->renderCodes($current);
+            $rendered = $this->renderCodes($eng, $current);
             $width = $this->figureWidth($rendered);
 
             if ($width > $this->outputWidth - 1 && count($current) > 1) {
@@ -623,13 +657,13 @@ final class Figlet
                     }
 
                     if ($beforeSpace !== []) {
-                        $figures[] = $this->renderCodes($beforeSpace);
+                        $figures[] = $this->renderCodes($eng, $beforeSpace);
                     }
                     $current = $afterSpace;
                 } else {
                     $overflow = array_pop($current);
                     if ($current !== []) {
-                        $figures[] = $this->renderCodes($current);
+                        $figures[] = $this->renderCodes($eng, $current);
                     }
                     $current = [$overflow];
                 }
@@ -638,37 +672,40 @@ final class Figlet
         }
 
         if ($current !== []) {
-            $figures[] = $this->renderCodes($current);
+            $figures[] = $this->renderCodes($eng, $current);
         }
 
         return $figures;
     }
 
-    /** @param list<string> $figure */
+    /** @param list<Row> $figure */
     private function figureWidth(array $figure): int
     {
         $max = 0;
         foreach ($figure as $row) {
-            $max = max($max, $this->charLength($row));
+            $max = max($max, $row->length());
         }
         return $max;
     }
 
     /**
      * Render a sequence of character codes into a FIGure.
-     * Uses the C-style smushamt/addchar algorithm.
+     *
+     * Port of the smushamt/addchar loop from figlet.c.
      *
      * @param list<int> $codes
-     * @return list<string>
+     * @return list<Row>
      */
-    private function renderCodes(array $codes): array
+    private function renderCodes(SmushEngine $eng, array $codes): array
     {
         $effectiveHLayout = $this->hLayoutOverride ?? $this->hLayout;
+        /** @var list<Row> $outLines */
         $outLines = [];
         $outWidth = 0;
         $prevCharWidth = 0;
 
         foreach ($codes as $lt) {
+            $lt = $this->resolveCharCode($lt);
             if (!isset($this->font[$lt])) {
                 if (isset($this->font[0])) {
                     $lt = 0;
@@ -688,18 +725,18 @@ final class Figlet
             }
 
             $smushAmount = $this->calcSmushAmount(
-                $outLines, $charLines, $outWidth, $charWidth, $prevCharWidth, $effectiveHLayout,
+                $eng, $outLines, $charLines, $outWidth, $charWidth, $prevCharWidth, $effectiveHLayout,
             );
 
             $outLines = $this->addCharToOutput(
-                $outLines, $charLines, $outWidth, $charWidth, $smushAmount,
+                $eng, $outLines, $charLines, $outWidth, $charWidth, $smushAmount,
             );
-            $outWidth = $outLines !== [] ? $this->charLength($outLines[0]) : 0;
+            $outWidth = $outLines !== [] ? $outLines[0]->length() : 0;
             $prevCharWidth = $charWidth;
         }
 
         if ($outLines === []) {
-            return array_fill(0, $this->height, '');
+            return array_fill(0, $this->height, new Row([]));
         }
 
         if ($effectiveHLayout !== LayoutMode::FullSize) {
@@ -710,13 +747,13 @@ final class Figlet
     }
 
     /**
-     * Calculate how many columns the new character can overlap with the output.
-     * Direct port of figlet C's smushamt().
+     * Port of smushamt() from figlet.c.
      *
-     * @param list<string> $outLines
-     * @param list<string> $charLines
+     * @param list<Row> $outLines
+     * @param list<Row> $charLines
      */
     private function calcSmushAmount(
+        SmushEngine $eng,
         array $outLines,
         array $charLines,
         int $outWidth,
@@ -732,8 +769,8 @@ final class Figlet
 
         for ($row = 0; $row < $this->height; $row++) {
             $boundary = $this->measureSmushBoundary(
-                $outLines[$row] ?? '',
-                $charLines[$row] ?? '',
+                $outLines[$row] ?? new Row([]),
+                $charLines[$row] ?? new Row([]),
                 $outWidth,
                 $charWidth,
             );
@@ -742,7 +779,7 @@ final class Figlet
             if ($boundary['left_edge'] === ' ') {
                 $amount++;
             } elseif ($boundary['right_edge'] !== ' ' && $mode === LayoutMode::Smushing) {
-                if ($this->smushem($boundary['left_edge'], $boundary['right_edge'], $prevCharWidth, $charWidth) !== null) {
+                if ($eng->smushem($boundary['left_edge'], $boundary['right_edge'], $prevCharWidth, $charWidth) !== null) {
                     $amount++;
                 }
             }
@@ -755,8 +792,8 @@ final class Figlet
 
     /** @return array{left_edge: string, right_edge: string, amount: int} */
     private function measureSmushBoundary(
-        string $outputRow,
-        string $characterRow,
+        Row $outputRow,
+        Row $characterRow,
         int $outputWidth,
         int $characterWidth,
     ): array {
@@ -769,61 +806,59 @@ final class Figlet
 
     /** @return array{left_edge: string, right_edge: string, amount: int} */
     private function measureRightToLeftSmushBoundary(
-        string $outputRow,
-        string $characterRow,
+        Row $outputRow,
+        Row $characterRow,
         int $characterWidth,
     ): array {
-        $trimmedCharWidth = $this->charLength($characterRow);
-        while ($trimmedCharWidth > 0 && $this->charAt($characterRow, $trimmedCharWidth - 1) === ' ') {
+        $trimmedCharWidth = $characterRow->length();
+        while ($trimmedCharWidth > 0 && $characterRow->charAt($trimmedCharWidth - 1) === ' ') {
             $trimmedCharWidth--;
         }
-        $leftEdge = $trimmedCharWidth > 0 ? $this->charAt($characterRow, $trimmedCharWidth - 1) : ' ';
+        $leftEdge = $trimmedCharWidth > 0 ? $characterRow->charAt($trimmedCharWidth - 1) : ' ';
         $leadingOutputSpace = 0;
-        $outputLength = $this->charLength($outputRow);
-        while ($leadingOutputSpace < $outputLength && $this->charAt($outputRow, $leadingOutputSpace) === ' ') {
+        $outputLength = $outputRow->length();
+        while ($leadingOutputSpace < $outputLength && $outputRow->charAt($leadingOutputSpace) === ' ') {
             $leadingOutputSpace++;
         }
-        $rightEdge = $leadingOutputSpace < $outputLength ? $this->charAt($outputRow, $leadingOutputSpace) : ' ';
+        $rightEdge = $leadingOutputSpace < $outputLength ? $outputRow->charAt($leadingOutputSpace) : ' ';
         return [
             'left_edge' => $leftEdge,
             'right_edge' => $rightEdge,
-            'amount' => $leadingOutputSpace + $characterWidth - $trimmedCharWidth,
+            'amount' => $leadingOutputSpace + $characterWidth - max($trimmedCharWidth, 1),
         ];
     }
 
     /** @return array{left_edge: string, right_edge: string, amount: int} */
     private function measureLeftToRightSmushBoundary(
-        string $outputRow,
-        string $characterRow,
+        Row $outputRow,
+        Row $characterRow,
         int $outputWidth,
         int $characterWidth,
     ): array {
-        $trimmedOutputWidth = $this->charLength($outputRow);
-        while ($trimmedOutputWidth > 0 && $this->charAt($outputRow, $trimmedOutputWidth - 1) === ' ') {
+        $trimmedOutputWidth = $outputRow->length();
+        while ($trimmedOutputWidth > 0 && $outputRow->charAt($trimmedOutputWidth - 1) === ' ') {
             $trimmedOutputWidth--;
         }
-        $leftEdge = $trimmedOutputWidth > 0 ? $this->charAt($outputRow, $trimmedOutputWidth - 1) : ' ';
+        $leftEdge = $trimmedOutputWidth > 0 ? $outputRow->charAt($trimmedOutputWidth - 1) : ' ';
         $leadingCharSpace = 0;
-        while ($leadingCharSpace < $characterWidth && $this->charAt($characterRow, $leadingCharSpace) === ' ') {
+        while ($leadingCharSpace < $characterWidth && $characterRow->charAt($leadingCharSpace) === ' ') {
             $leadingCharSpace++;
         }
-        $rightEdge = $leadingCharSpace < $characterWidth ? $this->charAt($characterRow, $leadingCharSpace) : ' ';
+        $rightEdge = $leadingCharSpace < $characterWidth ? $characterRow->charAt($leadingCharSpace) : ' ';
         return [
             'left_edge' => $leftEdge,
             'right_edge' => $rightEdge,
-            'amount' => $leadingCharSpace + $outputWidth - $trimmedOutputWidth,
+            'amount' => $leadingCharSpace + $outputWidth - max($trimmedOutputWidth, 1),
         ];
     }
 
     /**
-     * Apply overlap: overwrite smushamount columns at the junction, then concatenate.
-     * Direct port of figlet C's addchar() LTR path.
-     *
-     * @param list<string> $outLines
-     * @param list<string> $charLines
-     * @return list<string>
+     * @param list<Row> $outLines
+     * @param list<Row> $charLines
+     * @return list<Row>
      */
     private function addCharToOutput(
+        SmushEngine $eng,
         array $outLines,
         array $charLines,
         int $outWidth,
@@ -833,156 +868,70 @@ final class Figlet
         $result = [];
 
         for ($row = 0; $row < $this->height; $row++) {
-            $outRow = $outLines[$row] ?? '';
-            $charRow = $charLines[$row] ?? '';
+            $outRow = $outLines[$row] ?? new Row([]);
+            $charRow = $charLines[$row] ?? new Row([]);
 
             $result[] = $this->printDirection !== 0
-                ? $this->smushRowRtl($outRow, $charRow, $outWidth, $charWidth, $smushAmount)
-                : $this->smushRowLtr($outRow, $charRow, $outWidth, $charWidth, $smushAmount);
+                ? $this->smushRowRtl($eng, $outRow, $charRow, $outWidth, $charWidth, $smushAmount)
+                : $this->smushRowLtr($eng, $outRow, $charRow, $outWidth, $charWidth, $smushAmount);
         }
 
         return $result;
     }
 
-    private function smushRowLtr(string $outRow, string $charRow, int $outWidth, int $charWidth, int $smushAmount): string
+    private function smushRowLtr(SmushEngine $eng, Row $outRow, Row $charRow, int $outWidth, int $charWidth, int $smushAmount): Row
     {
         $line = $outRow;
         for ($k = 0; $k < $smushAmount; $k++) {
             $column = max(0, $outWidth - $smushAmount + $k);
-            $leftCh = $this->charAt($line, $column);
-            $rightCh = $this->charAt($charRow, $k);
+            $leftCh = $line->charAt($column);
+            $rightCh = $charRow->charAt($k);
             if ($leftCh === '') { $leftCh = ' '; }
             if ($rightCh === '') { $rightCh = ' '; }
-            $smushed = $this->smushem($leftCh, $rightCh, $outWidth, $charWidth);
-            if ($column < $this->charLength($line)) {
-                $line = $this->replaceCharAt($line, $column, $smushed ?? $rightCh);
+            $smushed = $eng->smushem($leftCh, $rightCh, $outWidth, $charWidth);
+            if ($column < $line->length()) {
+                $resultCh = $smushed ?? $rightCh;
+                $colorCell = $eng->pickSmushColor(
+                    $resultCh, $leftCh, $rightCh,
+                    $line->cellAt($column), $charRow->cellAt($k),
+                );
+                $line = $line->replaceAt($column, new Cell($resultCh, $colorCell->fg, $colorCell->bg));
             }
         }
-        return $line . $this->charSlice($charRow, $smushAmount);
+        return $line->append($charRow->slice($smushAmount));
     }
 
-    private function smushRowRtl(string $outRow, string $charRow, int $outWidth, int $charWidth, int $smushAmount): string
+    private function smushRowRtl(SmushEngine $eng, Row $outRow, Row $charRow, int $outWidth, int $charWidth, int $smushAmount): Row
     {
         $temp = $charRow;
         for ($k = 0; $k < $smushAmount; $k++) {
             $pos = $charWidth - $smushAmount + $k;
-            $leftCh = $this->charAt($temp, $pos);
-            $rightCh = $this->charAt($outRow, $k);
+            $leftCh = $temp->charAt($pos);
+            $rightCh = $outRow->charAt($k);
             if ($leftCh === '') { $leftCh = ' '; }
             if ($rightCh === '') { $rightCh = ' '; }
-            $smushed = $this->smushem($leftCh, $rightCh, $charWidth, $outWidth);
-            $temp = $this->replaceCharAt($temp, $pos, $smushed ?? $rightCh);
+            $smushed = $eng->smushem($leftCh, $rightCh, $charWidth, $outWidth);
+            $resultCh = $smushed ?? $rightCh;
+            $colorCell = $eng->pickSmushColor(
+                $resultCh, $leftCh, $rightCh,
+                $temp->cellAt($pos), $outRow->cellAt($k),
+            );
+            $temp = $temp->replaceAt($pos, new Cell($resultCh, $colorCell->fg, $colorCell->bg));
         }
-        return $temp . $this->charSlice($outRow, $smushAmount);
-    }
-
-    private function smushem(string $left, string $right, int $leftWidth, int $rightWidth): ?string
-    {
-        if ($left === ' ') {
-            return $right;
-        }
-        if ($right === ' ') {
-            return $left;
-        }
-        if ($leftWidth < 2 || $rightWidth < 2) {
-            return null;
-        }
-        if (($this->hLayoutOverride ?? $this->hLayout) !== LayoutMode::Smushing) {
-            return null;
-        }
-
-        $rules = $this->hSmushRules;
-
-        if ($rules === 0) {
-            if ($left === $this->hardblank) {
-                return $right;
-            }
-            if ($right === $this->hardblank) {
-                return $left;
-            }
-            return $this->printDirection !== 0 ? $left : $right;
-        }
-
-        return $this->applyHSmushRules($left, $right, $rules);
-    }
-
-    private function applyHSmushRules(string $left, string $right, int $rules): ?string
-    {
-        if ($left === $this->hardblank && $right === $this->hardblank) {
-            return ($rules & 32) !== 0 ? $left : null;
-        }
-        if ($left === $this->hardblank || $right === $this->hardblank) {
-            return null;
-        }
-
-        if (($rules & 1) !== 0 && $left === $right) {
-            return $left;
-        }
-
-        if (($rules & 2) !== 0) {
-            $result = $this->smushUnderscore($left, $right);
-            if ($result !== null) {
-                return $result;
-            }
-        }
-
-        if (($rules & 4) !== 0) {
-            $result = $this->smushHierarchy($left, $right);
-            if ($result !== null) {
-                return $result;
-            }
-        }
-
-        $pair = $left . $right;
-
-        if (($rules & 8) !== 0 && isset(self::OPPOSITE_PAIRS[$pair])) {
-            return self::OPPOSITE_PAIRS[$pair];
-        }
-
-        if (($rules & 16) !== 0 && isset(self::BIG_X_MAP[$pair])) {
-            return self::BIG_X_MAP[$pair];
-        }
-
-        return null;
-    }
-
-    private function smushUnderscore(string $left, string $right): ?string
-    {
-        if ($left === '_' && isset(self::HIERARCHY_CLASSES[$right])) {
-            return $right;
-        }
-        if ($right === '_' && isset(self::HIERARCHY_CLASSES[$left])) {
-            return $left;
-        }
-        return null;
-    }
-
-    private function smushHierarchy(string $left, string $right): ?string
-    {
-        $leftClass = self::HIERARCHY_CLASSES[$left] ?? 0;
-        $rightClass = self::HIERARCHY_CLASSES[$right] ?? 0;
-
-        if ($leftClass === 0 || $rightClass === 0 || $leftClass === $rightClass) {
-            return null;
-        }
-
-        return $rightClass > $leftClass ? $right : $left;
+        return $temp->append($outRow->slice($smushAmount));
     }
 
     /**
-     * Remove leading columns that are blank in ALL rows.
-     * Hardblanks are treated as visible (per spec).
-     *
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private function stripLeadingBlankColumns(array $figure): array
     {
         $minLeading = PHP_INT_MAX;
         foreach ($figure as $row) {
             $leading = 0;
-            $len = $this->charLength($row);
-            while ($leading < $len && $this->charAt($row, $leading) === ' ') {
+            $len = $row->length();
+            while ($leading < $len && $row->charAt($leading) === ' ') {
                 $leading++;
             }
             $minLeading = min($minLeading, $leading);
@@ -992,8 +941,8 @@ final class Figlet
         }
 
         if ($minLeading < PHP_INT_MAX) {
-            foreach ($figure as &$row) {
-                $row = $this->charSlice($row, $minLeading);
+            foreach ($figure as $idx => $row) {
+                $figure[$idx] = $row->slice($minLeading);
             }
         }
 
@@ -1001,11 +950,11 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $top
-     * @param list<string> $bottom
-     * @return list<string>
+     * @param list<Row> $top
+     * @param list<Row> $bottom
+     * @return list<Row>
      */
-    private function combineFiguresVertically(array $top, array $bottom, LayoutMode $vMode): array
+    private function combineFiguresVertically(SmushEngine $eng, array $top, array $bottom, LayoutMode $vMode): array
     {
         if ($vMode === LayoutMode::FullSize) {
             return array_merge($top, $bottom);
@@ -1013,33 +962,27 @@ final class Figlet
 
         $maxWidth = 0;
         foreach (array_merge($top, $bottom) as $row) {
-            $maxWidth = max($maxWidth, $this->charLength($row));
+            $maxWidth = max($maxWidth, $row->length());
         }
-        foreach ($top as &$row) {
-            $pad = $maxWidth - $this->charLength($row);
-            if ($pad > 0) {
-                $row .= str_repeat(' ', $pad);
-            }
+        foreach ($top as $idx => $row) {
+            $top[$idx] = $row->pad($maxWidth);
         }
-        unset($row);
-        foreach ($bottom as &$row) {
-            $pad = $maxWidth - $this->charLength($row);
-            if ($pad > 0) {
-                $row .= str_repeat(' ', $pad);
-            }
+        foreach ($bottom as $idx => $row) {
+            $bottom[$idx] = $row->pad($maxWidth);
         }
-        unset($row);
 
-        $overlap = $this->calcVerticalOverlap($top, $bottom, $maxWidth, $vMode);
+        $overlap = $this->calcVerticalOverlap($eng, $top, $bottom, $maxWidth, $vMode);
 
-        return $this->buildVerticalMerge($top, $bottom, $overlap, $maxWidth, $vMode);
+        return $this->buildVerticalMerge($eng, $top, $bottom, $overlap, $maxWidth, $vMode);
     }
 
     /**
-     * @param list<string> $top
-     * @param list<string> $bottom
+     * Port of vertical smush overlap calculation from figlet.c.
+     *
+     * @param list<Row> $top
+     * @param list<Row> $bottom
      */
-    private function calcVerticalOverlap(array $top, array $bottom, int $maxWidth, LayoutMode $vMode): int
+    private function calcVerticalOverlap(SmushEngine $eng, array $top, array $bottom, int $maxWidth, LayoutMode $vMode): int
     {
         $topHeight = count($top);
         $maxOverlap = min($topHeight, count($bottom));
@@ -1054,10 +997,10 @@ final class Figlet
 
         if ($vMode === LayoutMode::Smushing && $fittingOverlap < $maxOverlap) {
             $smushOverlap = $fittingOverlap + 1;
-            if ($this->canVerticallySmush($top, $bottom, $smushOverlap, $maxWidth)) {
+            if ($this->canVerticallySmush($eng, $top, $bottom, $smushOverlap, $maxWidth)) {
                 if (($this->vSmushRules & 16) !== 0) {
                     while ($smushOverlap < $maxOverlap
-                        && $this->canVerticallySmush($top, $bottom, $smushOverlap + 1, $maxWidth)
+                        && $this->canVerticallySmush($eng, $top, $bottom, $smushOverlap + 1, $maxWidth)
                     ) {
                         $smushOverlap++;
                     }
@@ -1070,8 +1013,8 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $top
-     * @param list<string> $bottom
+     * @param list<Row> $top
+     * @param list<Row> $bottom
      */
     private function canVerticallyFit(array $top, array $bottom, int $overlap, int $maxWidth): bool
     {
@@ -1079,11 +1022,11 @@ final class Figlet
         for ($col = 0; $col < $maxWidth; $col++) {
             for ($row = 0; $row < $overlap; $row++) {
                 $topIdx = $topHeight - $overlap + $row;
-                $topRow = $topIdx >= 0 ? ($top[$topIdx] ?? '') : '';
-                $topCh = $this->charAt($topRow, $col);
+                $topRow = $topIdx >= 0 ? ($top[$topIdx] ?? new Row([])) : new Row([]);
+                $topCh = $topRow->charAt($col);
                 $topChar = $this->vNormalize($topCh !== '' ? $topCh : ' ');
-                $bRow = $bottom[$row] ?? '';
-                $bCh = $this->charAt($bRow, $col);
+                $bRow = $bottom[$row] ?? new Row([]);
+                $bCh = $bRow->charAt($col);
                 $bottomChar = $this->vNormalize($bCh !== '' ? $bCh : ' ');
                 if ($topChar !== ' ' && $bottomChar !== ' ') {
                     return false;
@@ -1094,22 +1037,22 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $top
-     * @param list<string> $bottom
+     * @param list<Row> $top
+     * @param list<Row> $bottom
      */
-    private function canVerticallySmush(array $top, array $bottom, int $overlap, int $maxWidth): bool
+    private function canVerticallySmush(SmushEngine $eng, array $top, array $bottom, int $overlap, int $maxWidth): bool
     {
         $topHeight = count($top);
         for ($col = 0; $col < $maxWidth; $col++) {
             for ($row = 0; $row < $overlap; $row++) {
                 $topIdx = $topHeight - $overlap + $row;
-                $topRow = $topIdx >= 0 ? ($top[$topIdx] ?? '') : '';
-                $tCh = $this->charAt($topRow, $col);
+                $topRow = $topIdx >= 0 ? ($top[$topIdx] ?? new Row([])) : new Row([]);
+                $tCh = $topRow->charAt($col);
                 $topChar = $this->vNormalize($tCh !== '' ? $tCh : ' ');
-                $bRow = $bottom[$row] ?? '';
-                $bCh = $this->charAt($bRow, $col);
+                $bRow = $bottom[$row] ?? new Row([]);
+                $bCh = $bRow->charAt($col);
                 $bottomChar = $this->vNormalize($bCh !== '' ? $bCh : ' ');
-                if ($topChar !== ' ' && $bottomChar !== ' ' && $this->vSmushChar($topChar, $bottomChar) === null) {
+                if ($topChar !== ' ' && $bottomChar !== ' ' && $eng->vSmushChar($topChar, $bottomChar) === null) {
                     return false;
                 }
             }
@@ -1123,77 +1066,43 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $top
-     * @param list<string> $bottom
-     * @return list<string>
+     * @param list<Row> $top
+     * @param list<Row> $bottom
+     * @return list<Row>
      */
-    private function buildVerticalMerge(array $top, array $bottom, int $overlap, int $maxWidth, LayoutMode $vMode): array
+    private function buildVerticalMerge(SmushEngine $eng, array $top, array $bottom, int $overlap, int $maxWidth, LayoutMode $vMode): array
     {
         $topHeight = count($top);
         $result = array_slice($top, 0, $topHeight - $overlap);
 
         for ($row = 0; $row < $overlap; $row++) {
-            $topRow = $topHeight - $overlap + $row;
-            $merged = '';
+            $topRowIdx = $topHeight - $overlap + $row;
+            $cells = [];
             for ($col = 0; $col < $maxWidth; $col++) {
-                $tCh = $this->charAt($top[$topRow] ?? '', $col);
-                $topChar = $tCh !== '' ? $tCh : ' ';
-                $bCh = $this->charAt($bottom[$row] ?? '', $col);
-                $bottomChar = $bCh !== '' ? $bCh : ' ';
+                $topCell = ($top[$topRowIdx] ?? new Row([]))->cellAt($col);
+                $bottomCell = ($bottom[$row] ?? new Row([]))->cellAt($col);
+                $topChar = $topCell->char;
+                $bottomChar = $bottomCell->char;
                 $topNorm = $this->vNormalize($topChar);
                 $bottomNorm = $this->vNormalize($bottomChar);
 
-                $merged .= match (true) {
-                    $topNorm === ' ' => ($bottomNorm === ' ') ? $topChar : $bottomChar,
-                    $bottomNorm === ' ' => $topChar,
-                    $vMode === LayoutMode::Smushing => $this->vSmushChar($topNorm, $bottomNorm) ?? $bottomNorm,
-                    default => $bottomChar,
-                };
+                if ($vMode === LayoutMode::Smushing && $topNorm !== ' ' && $bottomNorm !== ' ') {
+                    $vResult = $eng->vSmushChar($topNorm, $bottomNorm) ?? $bottomNorm;
+                    $colorCell = $eng->pickSmushColor($vResult, $topNorm, $bottomNorm, $topCell, $bottomCell);
+                    $cells[] = new Cell($vResult, $colorCell->fg, $colorCell->bg);
+                } else {
+                    $cells[] = match (true) {
+                        $topNorm === ' ' && $bottomNorm === ' ' => $topCell,
+                        $topNorm === ' ' => $bottomCell,
+                        $bottomNorm === ' ' => $topCell,
+                        default => $bottomCell,
+                    };
+                }
             }
-            $result[] = $merged;
+            $result[] = new Row($cells);
         }
 
         return array_merge($result, array_slice($bottom, $overlap));
-    }
-
-    private function vSmushChar(string $top, string $bottom): ?string
-    {
-        $rules = $this->vSmushRules;
-
-        if ($rules === 0) {
-            if ($top === ' ') {
-                return $bottom;
-            }
-            return $bottom === ' ' ? $top : $bottom;
-        }
-
-        if (($rules & 1) !== 0 && $top === $bottom) {
-            return $top;
-        }
-
-        if (($rules & 2) !== 0) {
-            $result = $this->smushUnderscore($top, $bottom);
-            if ($result !== null) {
-                return $result;
-            }
-        }
-
-        if (($rules & 4) !== 0) {
-            $result = $this->smushHierarchy($top, $bottom);
-            if ($result !== null) {
-                return $result;
-            }
-        }
-
-        if (($rules & 8) !== 0 && (($top === '-' && $bottom === '_') || ($top === '_' && $bottom === '-'))) {
-            return '=';
-        }
-
-        if (($rules & 16) !== 0 && $top === '|' && $bottom === '|') {
-            return '|';
-        }
-
-        return null;
     }
 
     private function applyParagraphMode(string $str): string
@@ -1219,15 +1128,11 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private function applyJustification(array $figure): array
     {
-        if ($this->outputWidth === null) {
-            return $figure;
-        }
-
         $align = $this->justification;
         if ($align === Justification::Auto) {
             $align = $this->printDirection !== 0 ? Justification::Right : Justification::Left;
@@ -1237,18 +1142,18 @@ final class Figlet
             return $figure;
         }
 
-        $width = $this->outputWidth - 1;
+        $width = ($this->outputWidth ?? 80) - 1;
         $result = [];
 
         foreach ($figure as $row) {
-            $padding = $width - $this->charLength($row);
+            $padding = $width - $row->length();
             if ($padding <= 0) {
                 $result[] = $row;
                 continue;
             }
 
             $pad = $align === Justification::Right ? $padding : intdiv($padding, 2);
-            $result[] = str_repeat(' ', $pad) . $row;
+            $result[] = Row::empty($pad)->append($row);
         }
 
         return $result;
@@ -1294,7 +1199,7 @@ final class Figlet
 
     /**
      * @param resource $stream
-     * @return list<string>|false
+     * @return list<Row>|false
      */
     private function parseChar(mixed $stream): array|false
     {
@@ -1308,8 +1213,9 @@ final class Figlet
             $raw = fgets($stream, 2048);
             $line = $raw !== false ? rtrim($raw, "\r\n") : '';
 
-            if (!$this->isTlf) {
-                $line = $this->latin1ToUtf8($line);
+            if (!$this->isTlf && !mb_check_encoding($line, 'UTF-8')) {
+                /** @var string */
+                $line = mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1');
             }
             $pos = mb_strlen($line, 'UTF-8') - 1;
             while ($pos >= 0 && mb_substr($line, $pos, 1, 'UTF-8') === ' ') {
@@ -1323,7 +1229,7 @@ final class Figlet
             }
             $line = $pos >= 0 ? mb_substr($line, 0, $pos + 1, 'UTF-8') : '';
 
-            $out[] = $line;
+            $out[] = Row::fromAnsi($line);
         }
 
         return $out;
@@ -1338,8 +1244,8 @@ final class Figlet
     }
 
     /**
-     * @param list<string> $figure
-     * @return list<string>
+     * @param list<Row> $figure
+     * @return list<Row>
      */
     private function applyFilters(array $figure): array
     {
@@ -1348,5 +1254,19 @@ final class Figlet
         }
 
         return $figure;
+    }
+
+    private function applyBidi(string $str): string
+    {
+        if (!class_exists(Bidi::class)) {
+            return $str;
+        }
+
+        try {
+            $bidi = new Bidi($str);
+            return $bidi->getString();
+        } catch (Throwable) {
+            return $str;
+        }
     }
 }

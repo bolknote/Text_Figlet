@@ -1,0 +1,30 @@
+parameters:
+    level: max
+    paths:
+        - ../src
+        - ../tests
+    stubFiles:
+        - phpstan-stubs/mbstring.php
+    ignoreErrors:
+        # FFI methods and properties are defined via CDEF at runtime
+        -
+            identifier: method.notFound
+            path: ../src/Figlet.php
+            count: 1
+        -
+            identifier: property.notFound
+            path: ../src/Figlet.php
+            count: 1
+        -
+            identifier: cast.int
+            path: ../src/Figlet.php
+            count: 1
+        # Psalm requires this guard; PHPStan considers it dead code on PHP 8.5+
+        -
+            identifier: identical.alwaysFalse
+            path: ../src/Figlet.php
+            count: 1
+        -
+            identifier: function.alreadyNarrowedType
+            path: ../src/Figlet.php
+            count: 1

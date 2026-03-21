@@ -152,20 +152,30 @@ echo $figlet->render('Hi', ExportFormat::Html);   // XHTML with <span style>
 echo $figlet->render('Hi', ExportFormat::Html3);   // table-based with <font color>
 ```
 
-`Html` produces XHTML with `<nobr>`, `<span>`, `&nbsp;`. `Html3` produces a `<table>` with `<tr><td><tt>` rows and `<font color>` for colors -- compatible with older HTML renderers and email clients. Color filters (`Rainbow`, `Metal`) are automatically converted from ANSI to the appropriate HTML tags in both modes.
+`Html` produces XHTML with `<nobr>`, `<span>`, `&nbsp;` — supports both foreground and background colors via `style`. `Html3` produces a `<table>` with `<tr><td><tt>` rows — foreground via `<font color>`, background via `<td bgcolor>` — compatible with older HTML renderers and email clients. Color filters (`Rainbow`, `Metal`) are automatically converted from ANSI to the appropriate HTML tags in both modes.
 
 ## Font formats
 
 - `.flf` FIGlet fonts
-- `.tlf` TOIlet fonts
+- `.tlf` TOIlet fonts (including colored / 256-color glyphs)
 - `.flc` control files
+
+## Colored TLF fonts
+
+TLF fonts can embed ANSI color escape sequences. The library supports:
+
+- **16 colors** — standard SGR codes (30-37, 40-47, 90-97, 100-107)
+- **256 colors** — compact codes `256..511` (fg) / `512..767` (bg), or legacy `38;5;N` / `48;5;N` sequences (our extension, not part of the original TOIlet format)
+
+For fonts with 256-color encoding the library transparently decodes the full palette while remaining compatible with `toilet` which uses only the 16-color subset. Standard toilet fonts are loaded as-is.
 
 ## Bundled fonts
 
-The bundle includes 98 fonts:
+The bundle includes 317 fonts:
 
 - Classic FIGlet fonts and redistributable community fonts
 - TOIlet `.tlf` fonts including `emboss`, `emboss2`, `circle`, `future`, `letter`, `pagga`, `smblock`, `smbraille`, `wideterm`
+- `emoji` — 256-color emoji TLF font (1395 glyphs, built with `tools/build_emoji_font.py`)
 - JavE fonts with explicit modification/redistribution permission in their headers
 - One bundled CJK font: `gb16fs` (GB2312)
 
@@ -190,7 +200,8 @@ Implements the FIGfont Version 2 specification:
 - German character set (7 required Deutsch characters)
 - Code-tagged characters (decimal, hex, octal)
 - Control files with `t`/`f` commands, range mappings, encoding modes (UTF-8, HZ, Shift-JIS, DBCS), ISO 2022
-- TOIlet `.tlf` fonts
+- TOIlet `.tlf` fonts with 16/256-color ANSI support
+- Color-aware smushing (color follows the winning character)
 
 ## Static analysis
 

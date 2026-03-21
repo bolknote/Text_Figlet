@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet\Tests;
 
+use Normalizer;
+use Bolk\TextFiglet\Cell;
 use Bolk\TextFiglet\ControlFile;
 use Bolk\TextFiglet\Encoding;
 use Override;
@@ -18,10 +20,12 @@ use Bolk\TextFiglet\Filter;
 use Bolk\TextFiglet\FilterEngine;
 use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
+use Bolk\TextFiglet\Row;
+use Bolk\TextFiglet\SmushEngine;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
-
 final class FigletTest extends TestCase
 {
     /** @var list<string> */
@@ -54,13 +58,41 @@ final class FigletTest extends TestCase
     #[Override]
     protected function tearDown(): void
     {
+        $dirs = [];
+
         foreach ($this->tempPaths as $path) {
             if (is_file($path)) {
+                $dirs[dirname($path)] = true;
                 unlink($path);
             }
         }
 
+        foreach (array_keys($dirs) as $dir) {
+            @rmdir($dir);
+        }
+
         $this->tempPaths = [];
+    }
+
+    /**
+     * Decompress a gzip font to a temp directory and return that directory path.
+     * Used for reference tool comparison: figlet/toilet can't read raw gzip.
+     */
+    private function decompressGzipFont(string $fontPath): string
+    {
+        $plain = file_get_contents('compress.zlib://' . $fontPath);
+        if ($plain === false) {
+            $this->markTestSkipped('Cannot decompress gzip font');
+        }
+
+        $dir = sys_get_temp_dir() . '/figlet_ref_' . str_replace('.', '_', uniqid('', true));
+        mkdir($dir, 0700, true);
+
+        $dest = $dir . '/' . basename($fontPath);
+        file_put_contents($dest, $plain);
+        $this->tempPaths[] = $dest;
+
+        return $dir;
     }
 
     private function writeTempFile(string $contents, string $suffix): string
@@ -133,6 +165,12 @@ final class FigletTest extends TestCase
         return $path;
     }
 
+    private function getFigletProperty(Figlet $figlet, string $property): mixed
+    {
+        $ref = new ReflectionProperty($figlet, $property);
+        return $ref->getValue($figlet);
+    }
+
     private function setFigletProperty(Figlet $figlet, string $property, mixed $value): void
     {
         $ref = new ReflectionProperty($figlet, $property);
@@ -143,6 +181,35 @@ final class FigletTest extends TestCase
     {
         $ref = new ReflectionMethod($figlet, $method);
         return $ref->invoke($figlet, ...$args);
+    }
+
+    /**
+     * @param list<Row> $rows
+     * @return list<string>
+     */
+    private function rowsToStrings(array $rows): array
+    {
+        return array_map(static fn(Row $r): string => $r->toText(), $rows);
+    }
+
+    /**
+     * @param list<string> $strings
+     * @return list<Row>
+     */
+    private function stringsToRows(array $strings): array
+    {
+        return array_map(Row::fromString(...), $strings);
+    }
+
+    /**
+     * @return list<Row>
+     */
+    private function invokeRowListMethod(Figlet $figlet, string $method, mixed ...$args): array
+    {
+        $result = $this->invokeFigletMethod($figlet, $method, ...$args);
+        self::assertIsArray($result);
+        /** @var list<Row> $result */
+        return $result;
     }
 
     // --- Basic loading ---
@@ -655,6 +722,141 @@ final class FigletTest extends TestCase
         $this->assertGreaterThan($smushedWidth, $fullSizeWidth);
     }
 
+    /**
+     * Regression: oldLayout=32 without fullLayout must yield universal smushing
+     * (hSmushRules=0), not hardblank-only (hSmushRules=32).
+     * figlet.c masks with &31, dropping bit 5.
+     */
+    public function testOldLayout32YieldsUniversalSmushing(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(oldLayout: 32), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $this->assertSame(LayoutMode::Smushing, $figlet->getHorizontalLayout());
+        $this->assertSame(0, $this->getFigletProperty($figlet, 'hSmushRules'));
+    }
+
+    /**
+     * Regression: negative fullLayout (e.g. -2) must be treated as unsigned
+     * bitmask, matching figlet.c's two's complement behavior.
+     */
+    public function testNegativeFullLayoutTreatedAsUnsignedBitmask(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(oldLayout: -1, fullLayout: -2), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $this->assertSame(LayoutMode::Smushing, $figlet->getHorizontalLayout());
+        $this->assertSame(62, $this->getFigletProperty($figlet, 'hSmushRules'));
+    }
+
+    /**
+     * Regression: double.flf has fullLayout=-2; must match figlet output.
+     */
+    public function testDoubleFlf(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/double.flf');
+        $lines = explode("\n", $figlet->render('Hi'));
+
+        $this->assertSame(LayoutMode::Smushing, $figlet->getHorizontalLayout());
+        $this->assertSame('__  ____', rtrim($lines[0]));
+    }
+
+    /**
+     * Regression: colossal.flf has oldLayout=32 (no fullLayout).
+     * With the correct &31 mask, "Hi" row 0 is 13 chars wide (universal smushing).
+     * The old &63 mask gave 14 (hardblank-only prevented overlap).
+     */
+    public function testColossalSmushingRegression(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/colossal.flf');
+        $lines = explode("\n", $figlet->render('Hi'));
+
+        $this->assertSame(13, strlen(rtrim($lines[0])));
+    }
+
+    /**
+     * Regression: .flf fonts with Latin-1 box-drawing characters must be
+     * properly converted to UTF-8, not double-encoded (which produces â).
+     */
+    public function testLatin1ToUtf8EncodingRegression(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/tubes-regular.flf');
+        $out = $figlet->render('H');
+
+        $this->assertStringNotContainsString('â', $out);
+        $this->assertTrue(mb_check_encoding($out, 'UTF-8'));
+    }
+
+    /**
+     * Regression: blank-row off-by-one in calcSmushAmount.
+     * eftichess H and e are 0-width; the first real char (l) must not
+     * over-smush by 1 column into the empty output.
+     */
+    public function testBlankRowSmushAmountRegression(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/eftichess.flf');
+        $lines = explode("\n", $figlet->render('llo'));
+
+        $this->assertSame(27, strlen(rtrim($lines[0])));
+    }
+
+    /**
+     * Regression: gb16fs uses GB2312 BDF code tags, not Unicode.
+     * Unicode input must be converted to GB2312 codes for glyph lookup.
+     */
+    public function testGb2312UnicodeToCodeTagMapping(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/gb16fs.flf');
+        $out = $figlet->render('中');
+
+        $this->assertNotSame('', trim($out));
+        $lines = explode("\n", rtrim($out, "\n"));
+        $this->assertSame(16, count($lines));
+    }
+
+    public function testGb2312AsciiPassthrough(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/gb16fs.flf');
+        $out = $figlet->render('A');
+
+        $this->assertNotSame('', trim($out));
+        $lines = explode("\n", rtrim($out, "\n"));
+        $this->assertSame(16, count($lines));
+    }
+
+    public function testGb2312MultipleCjkChars(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/gb16fs.flf');
+
+        $single = $figlet->render('中');
+        $singleWidth = mb_strlen(explode("\n", $single)[0]);
+
+        $double = $figlet->render('中国');
+        $doubleWidth = mb_strlen(explode("\n", $double)[0]);
+
+        $this->assertGreaterThan($singleWidth, $doubleWidth);
+        $this->assertNotSame('', trim($double));
+    }
+
+    public function testGb2312UnknownCharFallback(): void
+    {
+        $figlet = new Figlet();
+        $figlet->loadFont(__DIR__ . '/../fonts/gb16fs.flf');
+        $out = $figlet->render("\u{0410}");
+
+        $lines = explode("\n", rtrim($out, "\n"));
+        $this->assertSame(16, count($lines));
+    }
+
     // --- Basic rendering ---
 
     public function testRenderAscii(): void
@@ -697,10 +899,44 @@ final class FigletTest extends TestCase
         $figlet = $this->loadedFiglet('emboss.tlf');
         $result = $figlet->render('A', ExportFormat::Html3);
         $this->assertStringStartsWith('<table ', $result);
-        $this->assertStringContainsString('<tr><td><tt>', $result);
+        $this->assertStringContainsString('<tr><td', $result);
+        $this->assertStringContainsString('<tt>', $result);
         $this->assertStringContainsString('</tt></td></tr>', $result);
         $this->assertStringContainsString('&#160;', $result);
         $this->assertStringEndsWith("</table>\n", $result);
+    }
+
+    public function testHtml3ColspanForPlainRow(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['ABCDE'])]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 5]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertMatchesRegularExpression('/colspan="5"/', $html);
+    }
+
+    public function testHtml3ColspanForColoredRow(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([
+                new Cell('A', null, 1),
+                new Cell('B', null, 1),
+                new Cell('C', null, 1),
+                new Cell('D', null, 2),
+                new Cell('E', null, 2),
+            ])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 5]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertMatchesRegularExpression('/colspan="3"/', $html);
+        $this->assertMatchesRegularExpression('/colspan="2"/', $html);
     }
 
     public function testHtml3WithRainbow(): void
@@ -1031,6 +1267,33 @@ final class FigletTest extends TestCase
         $this->assertGreaterThan(2, count($lines));
     }
 
+    public function testParagraphModeTrailingNewlineIsPreserved(): void
+    {
+        $figlet = $this->fixturedFiglet('smushing.flf');
+
+        // applyParagraphMode: newline at end of input (i + 1 >= len) → kept as newline
+        $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n");
+        $this->assertSame("A\n", $result);
+    }
+
+    public function testParagraphModeNewlineBeforeSpaceIsPreserved(): void
+    {
+        $figlet = $this->fixturedFiglet('smushing.flf');
+
+        // applyParagraphMode: newline followed by ' ' → kept as newline (not space)
+        $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n B");
+        $this->assertSame("A\n B", $result);
+    }
+
+    public function testParagraphModeNewlineBeforeNewlineIsPreserved(): void
+    {
+        $figlet = $this->fixturedFiglet('smushing.flf');
+
+        // applyParagraphMode: newline where next char is also newline → kept as newline
+        $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n\nB");
+        $this->assertSame("A\n\nB", $result);
+    }
+
     // --- Justification ---
 
     public function testJustificationLeft(): void
@@ -1134,40 +1397,36 @@ final class FigletTest extends TestCase
 
     public function testInternalSmushemBranches(): void
     {
-        $figlet = new Figlet();
-        $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'hLayout', LayoutMode::Smushing);
+        $eng = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
 
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'smushem', ' ', 'A', 2, 2));
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'smushem', 'A', ' ', 2, 2));
-        $this->assertNull($this->invokeFigletMethod($figlet, 'smushem', 'A', 'B', 1, 2));
+        $this->assertSame('A', $eng->smushem(' ', 'A', 2, 2));
+        $this->assertSame('A', $eng->smushem('A', ' ', 2, 2));
+        $this->assertNull($eng->smushem('A', 'B', 1, 2));
 
-        $this->setFigletProperty($figlet, 'hLayoutOverride', LayoutMode::Fitting);
-        $this->assertNull($this->invokeFigletMethod($figlet, 'smushem', 'A', 'B', 2, 2));
-        $this->setFigletProperty($figlet, 'hLayoutOverride', null);
+        $engFit = new SmushEngine('$', 0, 0, 0, LayoutMode::Fitting);
+        $this->assertNull($engFit->smushem('A', 'B', 2, 2));
 
-        $this->setFigletProperty($figlet, 'hSmushRules', 0);
-        $this->setFigletProperty($figlet, 'printDirection', 0);
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'smushem', '$', 'A', 2, 2));
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'smushem', 'A', '$', 2, 2));
-        $this->assertSame('B', $this->invokeFigletMethod($figlet, 'smushem', 'A', 'B', 2, 2));
+        $engR0 = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
+        $this->assertSame('A', $engR0->smushem('$', 'A', 2, 2));
+        $this->assertSame('A', $engR0->smushem('A', '$', 2, 2));
+        $this->assertSame('B', $engR0->smushem('A', 'B', 2, 2));
 
-        $this->setFigletProperty($figlet, 'printDirection', 1);
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'smushem', 'A', 'B', 2, 2));
+        $engRtl = new SmushEngine('$', 0, 0, 1, LayoutMode::Smushing);
+        $this->assertSame('A', $engRtl->smushem('A', 'B', 2, 2));
 
-        $this->setFigletProperty($figlet, 'hSmushRules', 32);
-        $this->assertSame('$', $this->invokeFigletMethod($figlet, 'smushem', '$', '$', 2, 2));
+        $eng32 = new SmushEngine('$', 32, 0, 1, LayoutMode::Smushing);
+        $this->assertSame('$', $eng32->smushem('$', '$', 2, 2));
 
-        $this->setFigletProperty($figlet, 'hSmushRules', 4);
-        $this->assertSame('{', $this->invokeFigletMethod($figlet, 'smushem', ']', '{', 2, 2));
-        $this->assertSame('{', $this->invokeFigletMethod($figlet, 'smushem', '{', '[', 2, 2));
-        $this->assertSame('<', $this->invokeFigletMethod($figlet, 'smushem', '(', '<', 2, 2));
-        $this->assertSame('<', $this->invokeFigletMethod($figlet, 'smushem', '<', '(', 2, 2));
+        $eng4 = new SmushEngine('$', 4, 0, 0, LayoutMode::Smushing);
+        $this->assertSame('{', $eng4->smushem(']', '{', 2, 2));
+        $this->assertSame('{', $eng4->smushem('{', '[', 2, 2));
+        $this->assertSame('<', $eng4->smushem('(', '<', 2, 2));
+        $this->assertSame('<', $eng4->smushem('<', '(', 2, 2));
 
-        $this->setFigletProperty($figlet, 'hSmushRules', 8);
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'smushem', ']', '[', 2, 2));
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'smushem', '}', '{', 2, 2));
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'smushem', ')', '(', 2, 2));
+        $eng8 = new SmushEngine('$', 8, 0, 0, LayoutMode::Smushing);
+        $this->assertSame('|', $eng8->smushem(']', '[', 2, 2));
+        $this->assertSame('|', $eng8->smushem('}', '{', 2, 2));
+        $this->assertSame('|', $eng8->smushem(')', '(', 2, 2));
     }
 
     public function testInternalCalcSmushAmountAndAddCharToOutputRtl(): void
@@ -1179,52 +1438,52 @@ final class FigletTest extends TestCase
         $this->setFigletProperty($figlet, 'hSmushRules', 16);
         $this->setFigletProperty($figlet, 'printDirection', 1);
 
+        $eng = new SmushEngine('$', 16, 0, 1, LayoutMode::Smushing);
+
         $this->assertSame(
             0,
-            $this->invokeFigletMethod($figlet, 'calcSmushAmount', ['AA'], ['BB'], 2, 2, 2, LayoutMode::FullSize),
+            $this->invokeFigletMethod($figlet, 'calcSmushAmount', $eng, $this->stringsToRows(['AA']), $this->stringsToRows(['BB']), 2, 2, 2, LayoutMode::FullSize),
         );
         $this->assertSame(
             1,
-            $this->invokeFigletMethod($figlet, 'calcSmushAmount', ['\\ '], [' /'], 2, 2, 2, LayoutMode::Smushing),
+            $this->invokeFigletMethod($figlet, 'calcSmushAmount', $eng, $this->stringsToRows(['\\ ']), $this->stringsToRows([' /']), 2, 2, 2, LayoutMode::Smushing),
         );
         $this->assertSame(
             2,
-            $this->invokeFigletMethod($figlet, 'calcSmushAmount', [' A'], ['  '], 2, 2, 2, LayoutMode::Fitting),
+            $this->invokeFigletMethod($figlet, 'calcSmushAmount', $eng, $this->stringsToRows([' A']), $this->stringsToRows(['  ']), 2, 2, 2, LayoutMode::Fitting),
         );
 
         $this->assertSame(
             [' | '],
-            $this->invokeFigletMethod($figlet, 'addCharToOutput', ['\\ '], [' /'], 2, 2, 1),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'addCharToOutput', $eng, $this->stringsToRows(['\\ ']), $this->stringsToRows([' /']), 2, 2, 1)),
         );
     }
 
     public function testInternalVSmushCharBranches(): void
     {
-        $figlet = new Figlet();
+        $eng0 = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
+        $this->assertSame('B', $eng0->vSmushChar(' ', 'B'));
+        $this->assertSame('A', $eng0->vSmushChar('A', ' '));
+        $this->assertSame('B', $eng0->vSmushChar('A', 'B'));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 0);
-        $this->assertSame('B', $this->invokeFigletMethod($figlet, 'vSmushChar', ' ', 'B'));
-        $this->assertSame('A', $this->invokeFigletMethod($figlet, 'vSmushChar', 'A', ' '));
-        $this->assertSame('B', $this->invokeFigletMethod($figlet, 'vSmushChar', 'A', 'B'));
+        $eng1 = new SmushEngine('$', 0, 1, 0, LayoutMode::Smushing);
+        $this->assertSame('|', $eng1->vSmushChar('|', '|'));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 1);
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'vSmushChar', '|', '|'));
+        $eng2 = new SmushEngine('$', 0, 2, 0, LayoutMode::Smushing);
+        $this->assertSame('|', $eng2->vSmushChar('|', '_'));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 2);
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'vSmushChar', '|', '_'));
+        $eng4 = new SmushEngine('$', 0, 4, 0, LayoutMode::Smushing);
+        $this->assertSame('<', $eng4->vSmushChar('(', '<'));
+        $this->assertSame('<', $eng4->vSmushChar('<', '('));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 4);
-        $this->assertSame('<', $this->invokeFigletMethod($figlet, 'vSmushChar', '(', '<'));
-        $this->assertSame('<', $this->invokeFigletMethod($figlet, 'vSmushChar', '<', '('));
+        $eng8 = new SmushEngine('$', 0, 8, 0, LayoutMode::Smushing);
+        $this->assertSame('=', $eng8->vSmushChar('_', '-'));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 8);
-        $this->assertSame('=', $this->invokeFigletMethod($figlet, 'vSmushChar', '_', '-'));
+        $eng16 = new SmushEngine('$', 0, 16, 0, LayoutMode::Smushing);
+        $this->assertSame('|', $eng16->vSmushChar('|', '|'));
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 16);
-        $this->assertSame('|', $this->invokeFigletMethod($figlet, 'vSmushChar', '|', '|'));
-
-        $this->setFigletProperty($figlet, 'vSmushRules', 2);
-        $this->assertNull($this->invokeFigletMethod($figlet, 'vSmushChar', 'A', 'B'));
+        $eng2 = new SmushEngine('$', 0, 2, 0, LayoutMode::Smushing);
+        $this->assertNull($eng2->vSmushChar('A', 'B'));
     }
 
     public function testInternalAllEmptyAndVerticalMergeBranches(): void
@@ -1233,26 +1492,28 @@ final class FigletTest extends TestCase
         $this->setFigletProperty($figlet, 'hardblank', '$');
         $this->setFigletProperty($figlet, 'vSmushRules', 0);
 
-        $this->assertTrue($this->invokeFigletMethod($figlet, 'allEmpty', [[' ', ''], ['   ']]));
-        $this->assertFalse($this->invokeFigletMethod($figlet, 'allEmpty', [['X']]));
+        $eng = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
+
+        $this->assertTrue($this->invokeFigletMethod($figlet, 'allEmpty', [$this->stringsToRows([' ', '']), $this->stringsToRows(['   '])]));
+        $this->assertFalse($this->invokeFigletMethod($figlet, 'allEmpty', [$this->stringsToRows(['X'])]));
 
         $this->assertSame(
             ['$'],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['$'], [' '], LayoutMode::Fitting),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $eng, $this->stringsToRows(['$']), $this->stringsToRows([' ']), LayoutMode::Fitting)),
         );
         $this->assertSame(
             ['A'],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['$'], ['A'], LayoutMode::Fitting),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $eng, $this->stringsToRows(['$']), $this->stringsToRows(['A']), LayoutMode::Fitting)),
         );
         $this->assertSame(
             ['A'],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['A'], ['$'], LayoutMode::Fitting),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $eng, $this->stringsToRows(['A']), $this->stringsToRows(['$']), LayoutMode::Fitting)),
         );
 
-        $this->setFigletProperty($figlet, 'vSmushRules', 2);
+        $engV2 = new SmushEngine('$', 0, 2, 0, LayoutMode::Smushing);
         $this->assertSame(
             ['A', 'B'],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['A'], ['B'], LayoutMode::Smushing),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $engV2, $this->stringsToRows(['A']), $this->stringsToRows(['B']), LayoutMode::Smushing)),
         );
     }
 
@@ -1260,14 +1521,15 @@ final class FigletTest extends TestCase
     {
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
-        $this->setFigletProperty($figlet, 'font', [0 => ['?']]);
+        $this->setFigletProperty($figlet, 'font', [0 => $this->stringsToRows(['?'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [0 => 1]);
 
-        $this->assertSame(['?'], $this->invokeFigletMethod($figlet, 'renderCodes', [999]));
+        $eng = new SmushEngine('', 0, 0, 0, LayoutMode::FullSize);
+        $this->assertSame(['?'], $this->rowsToStrings($this->invokeRowListMethod($figlet, 'renderCodes', $eng, [999])));
 
         $this->setFigletProperty($figlet, 'font', []);
         $this->setFigletProperty($figlet, 'fontCharWidths', []);
-        $this->assertSame([''], $this->invokeFigletMethod($figlet, 'renderCodes', [999]));
+        $this->assertSame([''], $this->rowsToStrings($this->invokeRowListMethod($figlet, 'renderCodes', $eng, [999])));
     }
 
     public function testInternalRenderLineWithWrappingBranches(): void
@@ -1275,9 +1537,9 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'font', [
-            32 => [' '],
-            65 => ['A'],
-            66 => ['B'],
+            32 => $this->stringsToRows([' ']),
+            65 => $this->stringsToRows(['A']),
+            66 => $this->stringsToRows(['B']),
         ]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [
             32 => 1,
@@ -1286,8 +1548,17 @@ final class FigletTest extends TestCase
         ]);
         $this->setFigletProperty($figlet, 'outputWidth', 1);
 
-        $this->assertSame([['A']], $this->invokeFigletMethod($figlet, 'renderLineWithWrapping', ' A'));
-        $this->assertSame([['A'], ['B']], $this->invokeFigletMethod($figlet, 'renderLineWithWrapping', 'A   B'));
+        $eng = new SmushEngine('', 0, 0, 0, LayoutMode::FullSize);
+        $raw1 = $this->invokeFigletMethod($figlet, 'renderLineWithWrapping', $eng, ' A');
+        self::assertIsArray($raw1);
+        /** @var list<list<Row>> $raw1 */
+        $result1 = array_map($this->rowsToStrings(...), $raw1);
+        $this->assertSame([['A']], $result1);
+        $raw2 = $this->invokeFigletMethod($figlet, 'renderLineWithWrapping', $eng, 'A   B');
+        self::assertIsArray($raw2);
+        /** @var list<list<Row>> $raw2 */
+        $result2 = array_map($this->rowsToStrings(...), $raw2);
+        $this->assertSame([['A'], ['B']], $result2);
     }
 
     // --- TLF (TOIlet) font support ---
@@ -1366,9 +1637,10 @@ final class FigletTest extends TestCase
         $this->setFigletProperty($figlet, 'printDirection', 1);
         $result = $figlet->render('Hi');
         $lines = explode("\n", $result);
-        $this->assertSame('┛┃ ┃', $lines[0]);
-        $this->assertSame('┃┏━┃', $lines[1]);
-        $this->assertSame('┛┛ ┛', $lines[2]);
+        $this->assertSame('┛┃ ┃', trim($lines[0]));
+        $this->assertSame('┃┏━┃', trim($lines[1]));
+        $this->assertSame('┛┛ ┛', trim($lines[2]));
+        $this->assertSame(79, mb_strlen($lines[0]));
     }
 
     public function testTlfJustification(): void
@@ -1568,13 +1840,14 @@ final class FigletTest extends TestCase
         $this->setFigletProperty($figlet, 'hardblank', '$');
         $this->setFigletProperty($figlet, 'vSmushRules', 0);
 
+        $eng = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
         $this->assertSame(
             ['C ', 'AB'],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['C'], ['AB'], LayoutMode::Fitting),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $eng, $this->stringsToRows(['C']), $this->stringsToRows(['AB']), LayoutMode::Fitting)),
         );
         $this->assertSame(
             ['AB', 'C '],
-            $this->invokeFigletMethod($figlet, 'combineFiguresVertically', ['AB'], ['C'], LayoutMode::Fitting),
+            $this->rowsToStrings($this->invokeRowListMethod($figlet, 'combineFiguresVertically', $eng, $this->stringsToRows(['AB']), $this->stringsToRows(['C']), LayoutMode::Fitting)),
         );
     }
 
@@ -1611,7 +1884,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 3);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['', 'A', '']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['', 'A', ''])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
         $figlet->addFilter(Filter::Crop);
 
@@ -1623,7 +1896,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'font', [32 => $this->stringsToRows(['   '])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
         $figlet->addFilter(Filter::Crop);
 
@@ -1660,7 +1933,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 2);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['TOP', 'BOT']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['TOP', 'BOT'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 3]);
         $figlet->addFilter(Filter::Flop);
 
@@ -1674,7 +1947,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 2);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['(A', 'B)']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['(A', 'B)'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 2]);
         $figlet->addFilter(Filter::Rotate180);
 
@@ -1732,7 +2005,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 2);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['AB', 'CD']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['AB', 'CD'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 2]);
         $figlet->addFilter(Filter::RotateRight);
 
@@ -1746,7 +2019,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['ABCD']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['ABCD'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 4]);
         $figlet->addFilter(Filter::RotateRight);
 
@@ -1760,7 +2033,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [65 => ['ABCD']]);
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['ABCD'])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 4]);
         $figlet->addFilter(Filter::RotateLeft);
 
@@ -1807,7 +2080,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'font', [32 => $this->stringsToRows(['   '])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
         $figlet->addFilter(Filter::Rainbow);
 
@@ -1832,7 +2105,7 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        $this->setFigletProperty($figlet, 'font', [32 => ['   ']]);
+        $this->setFigletProperty($figlet, 'font', [32 => $this->stringsToRows(['   '])]);
         $this->setFigletProperty($figlet, 'fontCharWidths', [32 => 3]);
         $figlet->addFilter(Filter::Metal);
 
@@ -1908,12 +2181,12 @@ final class FigletTest extends TestCase
 
     public function testFilterRotateRightEmptyFigure(): void
     {
-        $this->assertSame([''], FilterEngine::apply(Filter::RotateRight, []));
+        $this->assertSame([''], $this->rowsToStrings(FilterEngine::apply(Filter::RotateRight, [])));
     }
 
     public function testFilterRotateLeftEmptyFigure(): void
     {
-        $this->assertSame([''], FilterEngine::apply(Filter::RotateLeft, []));
+        $this->assertSame([''], $this->rowsToStrings(FilterEngine::apply(Filter::RotateLeft, [])));
     }
 
     // --- Terminal width ---
@@ -2017,22 +2290,22 @@ final class FigletTest extends TestCase
 
     public function testFilterRotateRightTransformsPair2x2(): void
     {
-        $this->assertSame(['▀▄'], FilterEngine::apply(Filter::RotateRight, ['▄▀']));
+        $this->assertSame(['▀▄'], $this->rowsToStrings(FilterEngine::apply(Filter::RotateRight, $this->stringsToRows(['▄▀']))));
     }
 
     public function testFilterRotateLeftTransformsPair2x2(): void
     {
-        $this->assertSame(['▀▄'], FilterEngine::apply(Filter::RotateLeft, ['▄▀']));
+        $this->assertSame(['▀▄'], $this->rowsToStrings(FilterEngine::apply(Filter::RotateLeft, $this->stringsToRows(['▄▀']))));
     }
 
     public function testFilterRotateRightTransformsPair2x4(): void
     {
-        $this->assertSame(["''"], FilterEngine::apply(Filter::RotateRight, [': ']));
+        $this->assertSame(["''"], $this->rowsToStrings(FilterEngine::apply(Filter::RotateRight, $this->stringsToRows([': ']))));
     }
 
     public function testFilterRotateLeftTransformsPair2x4(): void
     {
-        $this->assertSame(['..'], FilterEngine::apply(Filter::RotateLeft, [': ']));
+        $this->assertSame(['..'], $this->rowsToStrings(FilterEngine::apply(Filter::RotateLeft, $this->stringsToRows([': ']))));
     }
 
     public function testParseCharWithTrailingSpacesAfterEndmark(): void
@@ -2050,5 +2323,582 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $figlet->loadFont($fontPath);
         $this->assertSame("A\n", $figlet->render('A'));
+    }
+
+    // --- Color font (TLF with ANSI escapes) ---
+
+    private function buildColorTlfFont(): string
+    {
+        $header = "tlf2a\$ 1 1 1 -1 0 0";
+        $lines = [$header];
+
+        for ($code = 32; $code < 127; $code++) {
+            if ($code === 65) {
+                $lines[] = "\e[31mA\e[0m@";
+            } elseif ($code === 66) {
+                $lines[] = "\e[34mB\e[0m@";
+            } elseif ($code === 32) {
+                $lines[] = ' @';
+            } else {
+                $lines[] = chr($code) . '@';
+            }
+        }
+
+        for ($i = 0; $i < 7; $i++) {
+            $lines[] = 'g@';
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    public function testColorTlfFontLoadsColors(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildColorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $this->assertStringContainsString("\e[0m", $result);
+    }
+
+    public function testColorTlfFontPreservesColorInText(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildColorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('A');
+        $cleaned = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $this->assertSame("A\n", $cleaned);
+    }
+
+    public function testColorFontHtmlExportProducesSpans(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildColorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('<span style="color:#a00">', $result);
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testColorFontHtml3ExportProducesFontTags(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildColorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('<font color="#aa0000">', $result);
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testPlainFontTextHasNoAnsiCodes(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('AB');
+        $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testColorPreservedThroughSmushing(): void
+    {
+        $header = "tlf2a\$ 1 1 1 0 0 0 192 0";
+        $lines = [$header];
+
+        for ($code = 32; $code < 127; $code++) {
+            if ($code === 65) {
+                $lines[] = "\e[31mA \e[0m@";
+            } elseif ($code === 66) {
+                $lines[] = "\e[34m B\e[0m@";
+            } elseif ($code === 32) {
+                $lines[] = '  @';
+            } else {
+                $lines[] = chr($code) . ' @';
+            }
+        }
+
+        for ($i = 0; $i < 7; $i++) {
+            $lines[] = 'g @';
+        }
+
+        $fontPath = $this->writeTempFile(implode("\n", $lines) . "\n", '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('AB');
+        $cleaned = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $this->assertStringContainsString('A', $cleaned);
+        $this->assertStringContainsString('B', $cleaned);
+    }
+
+    // --- Rainbow/Metal with color export ---
+
+    public function testRainbowSetsPerCellColors(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['AAAAAA'])]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 6]);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $this->assertStringContainsString("\e[0m", $result);
+        $stripped = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $this->assertSame("AAAAAA\n", $stripped);
+    }
+
+    public function testMetalSetsPerCellColors(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['AAAAAAAAAA'])]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 10]);
+        $figlet->addFilter(Filter::Metal);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $stripped = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $this->assertSame("AAAAAAAAAA\n", $stripped);
+    }
+
+    public function testRainbowHtmlExportProducesColorSpans(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Rainbow);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('<span style="color:', $html);
+        $this->assertStringNotContainsString("\e[", $html);
+    }
+
+    public function testMetalHtml3ExportProducesColorFonts(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->addFilter(Filter::Metal);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('<font color="', $html);
+        $this->assertStringNotContainsString("\e[", $html);
+    }
+
+    // --- Color preserved through filters ---
+
+    public function testColorPreservedThroughFlip(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $figlet->addFilter(Filter::Rainbow);
+        $figlet->addFilter(Filter::Flip);
+
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['(A>'])]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 3]);
+
+        $result = $figlet->render('A');
+        $this->assertStringContainsString("\e[", $result);
+        $stripped = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $this->assertSame("<A)\n", $stripped);
+    }
+
+    public function testColorPreservedThroughBorder(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $figlet->addFilter(Filter::Rainbow);
+        $figlet->addFilter(Filter::Border);
+
+        $this->setFigletProperty($figlet, 'font', [65 => $this->stringsToRows(['A'])]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $result = $figlet->render('A');
+        $stripped = (string) preg_replace('/\e\[[0-9;]*m/', '', $result);
+        $lines = explode("\n", rtrim($stripped));
+        $this->assertStringStartsWith('┌', $lines[0]);
+    }
+
+    // --- Renderer: colored row with null-fg cells ---
+
+    public function testHtmlExportColoredRowWithNullFgCells(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 1), new Cell(' '), new Cell('B')])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 3]);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('<span style="color:#a00">A</span>', $html);
+        $this->assertStringContainsString('&nbsp;B', $html);
+        $this->assertStringNotContainsString("\e[", $html);
+    }
+
+    public function testHtml3ExportColoredRowWithNullFgCells(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('X', 2), new Cell('Y')])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 2]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('<font color="#00aa00">X</font>', $html);
+        $this->assertStringContainsString('Y', $html);
+    }
+
+    // --- Vertical smushing: default branch (controlled overlap, non-smushable chars) ---
+
+    public function testVerticalControlledFittingDefaultBranch(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'height', 1);
+
+        $eng = new SmushEngine('$', 0, 0, 0, LayoutMode::Smushing);
+        $result = $this->invokeRowListMethod(
+            $figlet,
+            'buildVerticalMerge',
+            $eng,
+            $this->stringsToRows(['A']),
+            $this->stringsToRows(['B']),
+            1,
+            1,
+            LayoutMode::Fitting,
+        );
+        $merged = $this->rowsToStrings($result);
+        $this->assertSame(['B'], $merged);
+    }
+
+    // --- Renderer: ansi256ToHex for 256-color cells ---
+
+    public function testHtmlExport256ColorFgCellProducesCorrectHex(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        // Color 200: idx=184, r=toVal(5)=255, g=toVal(0)=0, b=toVal(4)=215 → #ff00d7
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 200)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('#ff00d7', $html);
+        $this->assertStringContainsString('<span style="color:#ff00d7">A</span>', $html);
+    }
+
+    public function testHtmlExport256ColorGrayscaleCellProducesCorrectHex(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        // Color 240: gray = 8 + 10*(240-232) = 88 → #585858
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 240)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('#585858', $html);
+    }
+
+    public function testHtml3Export256ColorFgCellProducesCorrectHex(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 200)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('#ff00d7', $html);
+        $this->assertStringContainsString('<font color="#ff00d7">A</font>', $html);
+    }
+
+    // --- Renderer: rowToHtml background-only cell ---
+
+    public function testHtmlExportBgOnlyCellProducesBackgroundStyle(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', null, 2)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('background:#0a0', $html);
+        $this->assertStringNotContainsString('color:', $html);
+    }
+
+    public function testHtmlExportBothFgAndBgCellProducesCombinedStyle(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 1, 2)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html);
+        $this->assertStringContainsString('color:#a00;background:#0a0', $html);
+    }
+
+    public function testHtml3ExportBothFgAndBg(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', 1, 2)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('bgcolor="#00aa00"', $html);
+        $this->assertStringContainsString('<font color="#aa0000">A</font>', $html);
+    }
+
+    public function testHtml3ExportBgOnlyCellUsesBgcolor(): void
+    {
+        $figlet = new Figlet();
+        $this->setFigletProperty($figlet, 'height', 1);
+        $this->setFigletProperty($figlet, 'hardblank', '$');
+        $this->setFigletProperty($figlet, 'font', [
+            65 => [new Row([new Cell('A', null, 3)])],
+        ]);
+        $this->setFigletProperty($figlet, 'fontCharWidths', [65 => 1]);
+
+        $html = $figlet->render('A', ExportFormat::Html3);
+        $this->assertStringContainsString('bgcolor="#aa5500"', $html);
+        $this->assertStringNotContainsString('<font', $html);
+        $this->assertStringContainsString('A', $html);
+    }
+
+    // --- TOIlet compatibility (emoji.tlf: dual 16/256-color) ---
+
+    public function testToiletCompatibilityEmoji16Color(): void
+    {
+        /** @var list<string> $whichOutput */
+        $whichOutput = [];
+        exec('which toilet', $whichOutput, $whichCode);
+        if ($whichCode !== 0 || $whichOutput === []) {
+            $this->markTestSkipped('toilet is not installed');
+        }
+        $toilet = $whichOutput[0];
+
+        $toiletFontDir = dirname($this->fontPath('emoji.tlf'));
+
+        $supports256Prop = new ReflectionProperty(Row::class, 'supports256');
+        $downgradeCacheProp = new ReflectionProperty(Row::class, 'downgradeCache');
+        $saved256 = $supports256Prop->getValue();
+        $savedCache = $downgradeCacheProp->getValue();
+
+        try {
+            $supports256Prop->setValue(null, false);
+            $downgradeCacheProp->setValue(null, []);
+
+            $emoji = "\u{2764}\u{1F525}\u{2B50}";
+
+            $figlet = new Figlet();
+            $figlet->loadFont('emoji');
+            $ourOutput = $figlet->render($emoji);
+
+            $toiletCmd = sprintf(
+                '%s -w 10000 -d %s -f emoji -- %s',
+                escapeshellarg($toilet),
+                escapeshellarg($toiletFontDir),
+                escapeshellarg($emoji),
+            );
+            /** @var list<string> $toiletOutputLines */
+            $toiletOutputLines = [];
+            exec($toiletCmd, $toiletOutputLines, $toiletCode);
+            $this->assertSame(0, $toiletCode, 'toilet exited with error');
+
+            $ourLines = explode("\n", rtrim($ourOutput, "\n"));
+            $toiletLines = $toiletOutputLines;
+            while ($toiletLines !== [] && $toiletLines[count($toiletLines) - 1] === '') {
+                array_pop($toiletLines);
+            }
+
+            $this->assertCount(count($ourLines), $toiletLines, 'Line count mismatch');
+
+            foreach ($ourLines as $idx => $ourLine) {
+                $ourRow = Row::fromAnsi($ourLine);
+                $toiletRow = Row::fromAnsi($toiletLines[$idx]);
+
+                $len = max($ourRow->length(), $toiletRow->length());
+                for ($col = 0; $col < $len; $col++) {
+                    $ourCell = $ourRow->cellAt($col);
+                    $toiletCell = $toiletRow->cellAt($col);
+
+                    $this->assertSame(
+                        $ourCell->char,
+                        $toiletCell->char,
+                        "Char mismatch at row $idx, col $col",
+                    );
+                    $this->assertSame(
+                        $ourCell->fg,
+                        $toiletCell->fg,
+                        "FG color mismatch at row $idx, col $col (char '{$ourCell->char}')",
+                    );
+                    $this->assertSame(
+                        $ourCell->bg,
+                        $toiletCell->bg,
+                        "BG color mismatch at row $idx, col $col (char '{$ourCell->char}')",
+                    );
+                }
+            }
+        } finally {
+            $supports256Prop->setValue(null, $saved256);
+            $downgradeCacheProp->setValue(null, $savedCache);
+        }
+    }
+
+    // --- NFC Normalization ---
+
+    public function testNfcNormalizationComposesCharacters(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [['code' => 0xE9, 'glyph' => 'e']],
+        ), '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $precomposed = $figlet->render("\xC3\xA9");
+        $decomposed = $figlet->render("e\xCC\x81");
+
+        if (class_exists(Normalizer::class)) {
+            $this->assertSame($precomposed, $decomposed);
+        } else {
+            $this->assertNotSame($precomposed, $decomposed);
+        }
+    }
+
+    public function testTerminalWidth(): void
+    {
+        $savedColumns = getenv('COLUMNS');
+        putenv('COLUMNS=120');
+
+        try {
+            $this->assertSame(120, Figlet::terminalWidth());
+            
+            // Just test that the function doesn't crash when COLUMNS is absent.
+            // It will fall back to ioctl, tput, stty, or 80.
+            putenv('COLUMNS=');
+            $width = Figlet::terminalWidth();
+            $this->assertGreaterThan(0, $width);
+        } finally {
+            putenv($savedColumns !== false ? 'COLUMNS=' . $savedColumns : 'COLUMNS');
+        }
+    }
+
+    /**
+     * Fonts excluded from reference comparison (.flf→figlet, .tlf→toilet):
+     *
+     * - Latin-1/multi-byte: we produce correct UTF-8; figlet outputs raw bytes
+     * - CP437: neither figlet nor this library supports the encoding
+     */
+    private const REFERENCE_SKIP = [
+        'konto', 'kontoslant', 'stronger_than_all',
+    ];
+
+    /** @return iterable<string, array{string}> */
+    public static function referenceFontProvider(): iterable
+    {
+        $fontsDir = realpath(__DIR__ . '/../fonts');
+        if ($fontsDir === false) {
+            return;
+        }
+
+        $flf = glob($fontsDir . '/*.flf');
+        $tlf = glob($fontsDir . '/*.tlf');
+        $files = array_merge(
+            $flf !== false ? $flf : [],
+            $tlf !== false ? $tlf : [],
+        );
+        sort($files);
+
+        $skip = array_merge(['emoji'], self::REFERENCE_SKIP);
+
+        foreach ($files as $path) {
+            $name = pathinfo($path, PATHINFO_FILENAME);
+            if (in_array($name, $skip, true)) {
+                continue;
+            }
+            yield $name => [$path];
+        }
+    }
+
+    private function normalizeForComparison(string $s): string
+    {
+        $s = str_replace("\xc2\xa0", ' ', $s);
+        $s = (string) preg_replace("/\x1b\\[[0-9;]*m/", '', $s);
+        $lines = array_map(rtrim(...), explode("\n", $s));
+        while ($lines !== [] && $lines[count($lines) - 1] === '') {
+            array_pop($lines);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    #[DataProvider('referenceFontProvider')]
+    public function testReferenceCompatibility(string $fontPath): void
+    {
+        $name = pathinfo($fontPath, PATHINFO_FILENAME);
+        $ext = pathinfo($fontPath, PATHINFO_EXTENSION);
+
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->setWidth(10000);
+        $ours = $this->normalizeForComparison($figlet->render('Hello'));
+
+        $refLines = [];
+        $exitCode = 0;
+
+        $isGzip = file_get_contents($fontPath, false, null, 0, 2) === "\x1f\x8b";
+        $refFontDir = ($ext === 'flf' && $isGzip)
+            ? $this->decompressGzipFont($fontPath)
+            : dirname($fontPath);
+
+        if ($ext === 'tlf') {
+            $cmd = 'toilet -w 10000 -d ' . escapeshellarg($refFontDir)
+                . ' -f ' . escapeshellarg($name) . ' Hello 2>&1';
+        } else {
+            $cmd = 'figlet -w 10000 -d ' . escapeshellarg($refFontDir)
+                . ' -f ' . escapeshellarg($name) . ' Hello 2>&1';
+        }
+
+        exec($cmd, $refLines, $exitCode);
+
+        if ($exitCode !== 0) {
+            $this->markTestSkipped("Reference tool cannot render font $name");
+        }
+
+        $theirs = $this->normalizeForComparison(implode("\n", $refLines));
+
+        $tool = $ext === 'tlf' ? 'toilet' : 'figlet';
+        $this->assertSame($theirs, $ours, "Output differs from $tool for font $name");
     }
 }
