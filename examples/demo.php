@@ -402,12 +402,30 @@ $figlet->clearFilters();
 // ============================================================
 section('20. TERMINAL WIDTH');
 
-echo "Detected terminal width: " . Figlet::terminalWidth() . " columns\n\n";
+$termWidth = Figlet::terminalWidth();
+echo "Detected terminal width: $termWidth columns\n\n";
 
 $figlet = new Figlet();
 $figlet->loadFont($fontsDir . 'small.flf');
-$figlet->setWidth(Figlet::terminalWidth());
-echo $figlet->render('Terminal width wrapping demo text') . "\n";
+
+$figlet->setWidth($termWidth);
+$target = (int) round($termWidth * 1.7);
+
+$chars = '';
+$estimatedWidth = 0;
+foreach ($figlet->getLoadedCodepoints() as $cp) {
+    if ($cp <= 32 || !ctype_alnum(mb_chr($cp, 'UTF-8'))) {
+        continue;
+    }
+    $estimatedWidth += $figlet->getCharWidth($cp) ?? 0;
+    $chars .= mb_chr($cp, 'UTF-8');
+    if ($estimatedWidth >= $target) {
+        break;
+    }
+}
+
+echo "Target: ~{$target} columns (1.7× terminal), will wrap automatically\n\n";
+echo $figlet->render($chars) . "\n";
 
 // ============================================================
 section('21. INFOCODE');

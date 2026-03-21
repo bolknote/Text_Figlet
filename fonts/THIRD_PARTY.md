@@ -139,3 +139,116 @@ Grey Wolf Web Works (conversion by Evgeny Stepanischev)
 
 Licensing note:
 GPL and OFL. See `fonts/LICENSE`.
+
+## xero/figlet-fonts — Glenn Chappell figlet 2.1 variants
+
+Assets:
+`small_shadow.flf`, `small_slant.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`)
+
+Licensing note:
+Each file header contains:
+`Permission is hereby given to modify this font, as long as the modifier's name is placed on a comment line.`
+(Glenn Chappell, figlet release 2.1 — 12 Aug 1994)
+
+## xero/figlet-fonts — JavE fonts
+
+Assets:
+`js_capital_curves.flf`, `thorned.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`)
+
+Licensing note:
+Each file header contains:
+`Permission is hereby given to modify this font, as long as the modifier's name is placed on a comment line.`
+(via JavE FIGlet font export assistant, http://www.jave.de)
+
+## xero/figlet-fonts — Terminus-based fonts
+
+Assets:
+`terminus.flf`, `terminus_dots.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`);
+based on Terminus bitmap font (`https://terminus-font.sourceforge.net/`),
+generated with `https://gitlab.com/unlessgames/flfgen`
+
+Licensing note:
+Terminus is released under the SIL Open Font License 1.1. See `fonts/LICENSE`.
+
+## xero/figlet-fonts — TOIlet-derived font
+
+Assets:
+`mono9.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`);
+modified from TOIlet's `smmono9.tlf` by @BooeySays, 2020
+
+Licensing note:
+Derived from a TOIlet font (WTFPL v2; see TOIlet section above).
+
+## xero/figlet-fonts — patorjk creations and conversions
+
+Assets:
+`3d-ascii.flf`, `ansi_regular.flf`, `ansi_shadow.flf`, `bloody.flf`, `calvin_s.flf`,
+`crawford2.flf`, `delta_corps_priest_1.flf`, `electronic.flf`, `elite.flf`,
+`patorjks_cheese.flf`, `patorjk-hex.flf`, `stronger_than_all.flf`,
+`the_edge.flf`, `this.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`);
+created or converted by patorjk (`http://patorjk.com/figfont-editor`)
+
+Licensing note:
+Fonts created with patorjk.com's FIGfont editor or converted by patorjk from
+the ASCII-art community. Several are derived from TheDraw TDF format via the
+historical roysac.com archive. Shared without restriction on patorjk.com and
+distributed widely in the figlet community.
+
+## xero/figlet-fonts — Joan Stark ASCII art conversions
+
+Assets:
+`js_block_letters.flf`, `js_bracket_letters.flf`, `js_cursive.flf`,
+`js_stick_letters.flf`, `stick_letters.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`);
+ASCII art by Joan Stark (`http://www.geocities.com/SoHo/7373/`),
+FIGlet conversions by patorjk (April 2008)
+
+Licensing note:
+Joan Stark's ASCII art was shared publicly for non-commercial use with
+attribution. The FIGlet conversions are by patorjk and carry no additional
+restrictions.
+
+## xero/figlet-fonts — other community fonts
+
+Assets:
+`big_money-ne.flf`, `big_money-nw.flf`, `big_money-se.flf`, `big_money-sw.flf`,
+`cursive.flf`, `crawford2.flf`, `halfiwi.flf`, `koholint.flf`, `kompaktblk.flf`,
+`maxiwi.flf`, `miniwi.flf`, `six-fo.flf`, `stencil.flf`, `tubes-regular.flf`,
+`tubes-smushed.flf`, `ublk.flf`
+
+Source:
+`xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`)
+
+Licensing note:
+- `cursive.flf`: based on `cursive(6)` by Jan Wolter (24 Jul 1985); FIGlet conversion
+  by Wendell Hicken (5 Mar 1994), amended by Jerrad Pierce (8 Aug 2002). No explicit
+  redistribution restriction.
+- `crawford2.flf`: update of Crawford by patorjk (Jan 2008); original by Rowan Crawford
+  from alt.ascii-art, no explicit restriction.
+- `big_money-ne/nw/se/sw.flf`: no license header; widely redistributed in figlet
+  community.
+- `halfiwi.flf`, `maxiwi.flf`, `miniwi.flf`: based on the miniwi bitmap font
+  (`https://github.com/sshbio/miniwi`); published without a license file, shared
+  publicly on GitHub.
+- `koholint.flf`, `kompaktblk.flf`, `six-fo.flf`, `ublk.flf`: created by netspooky
+  (`https://n0.lol`); published without a license file, shared publicly on GitHub.
+- `stencil.flf`: by Subskybox (subskybox@gmail.com); shared without restriction.
+- `tubes-regular.flf`, `tubes-smushed.flf`: by Phantomwise; created with patorjk.com's
+  FIGfont editor, shared without restriction.

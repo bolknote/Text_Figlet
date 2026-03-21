@@ -12,7 +12,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.6.2';
+    public const string VERSION = '2.6.3';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -317,32 +317,33 @@ final class Figlet
         }
 
         $this->fontComment = '';
-        $compressed = false;
-
-        if (str_ends_with($filename, '.gz')) {
-            if (!extension_loaded('zlib')) {
-                throw new FontLoadException(
-                    'Cannot load gzip compressed fonts: zlib extension is not available'
-                );
-            }
-            $filename = 'compress.zlib://' . $filename;
-            $compressed = true;
-        }
 
         $stream = fopen($filename, 'rb');
         if ($stream === false) {
             throw new FontLoadException('Cannot open figlet font file ' . $filename);
         }
 
-        if (!$compressed) {
-            $magic = fread($stream, 2);
-            if ($magic === 'PK') {
-                fclose($stream);
-                $stream = $this->openZipFont($filename);
-            } else {
-                flock($stream, LOCK_SH);
-                rewind($stream);
+        $magic = fread($stream, 2);
+        fclose($stream);
+
+        if ($magic === "\x1f\x8b") {
+            if (!extension_loaded('zlib')) {
+                throw new FontLoadException(
+                    'Cannot load gzip compressed fonts: zlib extension is not available'
+                );
             }
+            $stream = fopen('compress.zlib://' . $filename, 'rb');
+            if ($stream === false) {
+                throw new FontLoadException('Cannot open figlet font file ' . $filename);
+            }
+        } elseif ($magic === 'PK') {
+            $stream = $this->openZipFont($filename);
+        } else {
+            $stream = fopen($filename, 'rb');
+            if ($stream === false) {
+                throw new FontLoadException('Cannot open figlet font file ' . $filename);
+            }
+            flock($stream, LOCK_SH);
         }
 
         try {
@@ -1054,6 +1055,13 @@ final class Figlet
         if ($vMode === LayoutMode::Smushing && $fittingOverlap < $maxOverlap) {
             $smushOverlap = $fittingOverlap + 1;
             if ($this->canVerticallySmush($top, $bottom, $smushOverlap, $maxWidth)) {
+                if (($this->vSmushRules & 16) !== 0) {
+                    while ($smushOverlap < $maxOverlap
+                        && $this->canVerticallySmush($top, $bottom, $smushOverlap + 1, $maxWidth)
+                    ) {
+                        $smushOverlap++;
+                    }
+                }
                 return $smushOverlap;
             }
         }

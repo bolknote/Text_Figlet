@@ -10,6 +10,7 @@ use ReflectionMethod;
 use Bolk\TextFiglet\ControlFile;
 use Bolk\TextFiglet\Encoding;
 use Bolk\TextFiglet\Exception\ControlFileException;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 
 final class ControlFileTest extends TestCase
@@ -225,6 +226,7 @@ final class ControlFileTest extends TestCase
         $this->assertSame("\xC2\x80", $controlFile->apply("\xFF"));
     }
 
+    #[RequiresPhpExtension('zlib')]
     public function testLoadGzipCompressedControlFile(): void
     {
         $encoded = gzencode("t A B\n");
@@ -235,6 +237,7 @@ final class ControlFileTest extends TestCase
         $this->assertSame('B', $controlFile->apply('A'));
     }
 
+    #[RequiresPhpExtension('zip')]
     public function testLoadZipCompressedControlFile(): void
     {
         $path = $this->writeZipArchive("t A B\n");
@@ -243,6 +246,7 @@ final class ControlFileTest extends TestCase
         $this->assertSame('B', $controlFile->apply('A'));
     }
 
+    #[RequiresPhpExtension('zip')]
     public function testEmptyZipControlFileThrows(): void
     {
         $path = $this->writeTempFile("PK\x05\x06" . str_repeat("\x00", 18), '.flc');

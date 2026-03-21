@@ -18,6 +18,8 @@ use Bolk\TextFiglet\Filter;
 use Bolk\TextFiglet\FilterEngine;
 use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 
 final class FigletTest extends TestCase
@@ -409,6 +411,7 @@ final class FigletTest extends TestCase
         $this->assertNotSame('', trim($figlet->render("~{AB~}")));
     }
 
+    #[RequiresPhpExtension('zlib')]
     public function testLoadGzipCompressedFont(): void
     {
         $font = $this->buildSimpleFont();
@@ -426,6 +429,25 @@ final class FigletTest extends TestCase
         $this->assertSame($plain->render('AB'), $compressed->render('AB'));
     }
 
+    #[RequiresPhpExtension('zlib')]
+    public function testGzipFontDetectedByMagicBytesNotExtension(): void
+    {
+        $font = $this->buildSimpleFont();
+        $plainPath = $this->writeTempFile($font, '.flf');
+        $encoded = gzencode($font);
+        self::assertNotFalse($encoded);
+        $noExtPath = $this->writeTempFile($encoded, '.flf');
+
+        $plain = new Figlet();
+        $plain->loadFont($plainPath);
+
+        $compressed = new Figlet();
+        $compressed->loadFont($noExtPath);
+
+        $this->assertSame($plain->render('AB'), $compressed->render('AB'));
+    }
+
+    #[RequiresPhpExtension('zip')]
     public function testLoadZipCompressedFont(): void
     {
         $font = $this->buildSimpleFont();
@@ -441,6 +463,7 @@ final class FigletTest extends TestCase
         $this->assertSame($plain->render('AB'), $compressed->render('AB'));
     }
 
+    #[RequiresPhpExtension('zip')]
     public function testEmptyZipArchiveThrows(): void
     {
         $zipPath = $this->writeTempFile("PK\x05\x06" . str_repeat("\x00", 18), '.zip');
@@ -452,6 +475,7 @@ final class FigletTest extends TestCase
         $figlet->loadFont($zipPath);
     }
 
+    #[RequiresPhpExtension('zip')]
     public function testInvalidZipArchiveThrows(): void
     {
         $zipPath = $this->writeTempFile('PKxx', '.zip');
@@ -902,6 +926,42 @@ final class FigletTest extends TestCase
         $figlet->loadFont($fontPath);
 
         $this->assertSame("|\n", $figlet->render("|\n|"));
+    }
+
+    public function testVerticalSupersmushingContinuesBeyondOneRow(): void
+    {
+        $height = 4;
+        $fullLayout = 16384 | 4096;
+        $header = "flf2a\$ $height $height 6 -1 0 0 $fullLayout 0";
+        $lines = [$header];
+
+        for ($code = 32; $code < 127; $code++) {
+            for ($row = 0; $row < $height; $row++) {
+                $endmark = ($row === $height - 1) ? '~~' : '~';
+                if ($code === 124) {
+                    $lines[] = '| ' . $endmark;
+                } elseif ($code === 32) {
+                    $lines[] = '$ ' . $endmark;
+                } else {
+                    $lines[] = ($row === 0 ? chr($code) : ' ') . ' ' . $endmark;
+                }
+            }
+        }
+
+        for ($i = 0; $i < 7; $i++) {
+            for ($row = 0; $row < $height; $row++) {
+                $lines[] = ($row === $height - 1) ? '~~' : '~';
+            }
+        }
+
+        $fontPath = $this->writeTempFile(implode("\n", $lines) . "\n", '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render("|\n|");
+        $resultLines = explode("\n", rtrim($result, "\n"));
+
+        $this->assertCount($height, $resultLines, 'Supersmushing should merge all | rows');
     }
 
     // --- Word wrapping ---
@@ -1887,12 +1947,10 @@ final class FigletTest extends TestCase
         $this->assertGreaterThanOrEqual(0, $result);
     }
 
+    #[RequiresPhpExtension('ffi')]
+    #[RequiresOperatingSystem('Darwin|Linux')]
     public function testTerminalWidthViaIoctlWithFfi(): void
     {
-        if (!extension_loaded('ffi') || PHP_OS_FAMILY === 'Windows') {
-            $this->markTestSkipped('ext-ffi not available or Windows');
-        }
-
         $figlet = new Figlet();
         $result = $this->invokeFigletMethod($figlet, 'terminalWidthViaIoctl');
         $this->assertIsInt($result);
