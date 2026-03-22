@@ -46,7 +46,7 @@ final class AnsiColor
         [85, 85, 255], [255, 85, 255], [85, 255, 255], [255, 255, 255],
     ];
 
-    /** Reset all static caches. Call after changing TERM/COLORTERM mid-process. */
+    /** Reset all static caches. Call after changing TERM/COLORTERM/TERM_FEATURES mid-process. */
     public static function resetCaches(): void
     {
         self::$colorSupport = null;
@@ -138,7 +138,7 @@ final class AnsiColor
 
     /**
      * Detected terminal color tier, cached for the process lifetime.
-     * Use {@see resetCaches()} when changing TERM/COLORTERM mid-process.
+     * Use {@see resetCaches()} when changing TERM/COLORTERM/TERM_FEATURES mid-process.
      */
     public static function colorSupportLevel(): int
     {
@@ -154,6 +154,10 @@ final class AnsiColor
             }
         }
 
+        if (self::termFeaturesAdvertises24Bit()) {
+            return self::$colorSupport = self::COLOR_LEVEL_TRUECOLOR;
+        }
+
         $term = getenv('TERM');
         if (!is_string($term)) {
             return self::$colorSupport = self::COLOR_LEVEL_16;
@@ -162,6 +166,26 @@ final class AnsiColor
         return self::$colorSupport = str_contains($term, '256color')
             ? self::COLOR_LEVEL_256
             : self::COLOR_LEVEL_16;
+    }
+
+    /**
+     * Terminal Feature Reporting: 24BIT (compact code T) as a fallback when COLORTERM is unset.
+     *
+     * @see https://www.iterm2.com/feature-reporting
+     */
+    private static function termFeaturesAdvertises24Bit(): bool
+    {
+        $raw = getenv('TERM_FEATURES');
+        if (!is_string($raw)) {
+            return false;
+        }
+
+        // Find T + number within the valid alphanumeric prefix string
+        if (preg_match('/^[A-Za-z0-9]*?T(\d+)/', $raw, $m) === 1) {
+            return ((int) $m[1] & 3) !== 0;
+        }
+
+        return false;
     }
 
     /** @return array{int, int, int} */

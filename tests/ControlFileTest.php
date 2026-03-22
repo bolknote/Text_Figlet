@@ -59,7 +59,7 @@ final class ControlFileTest extends TestCase
         return $path;
     }
 
-    private function invokeControlFileMethod(ControlFile $controlFile, string $method, mixed ...$args): mixed
+    private function invokeControlFileMethod(ControlFile $controlFile, string $method, string ...$args): mixed
     {
         $ref = new ReflectionMethod($controlFile, $method);
         return $ref->invoke($controlFile, ...$args);

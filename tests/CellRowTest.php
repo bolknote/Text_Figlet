@@ -1110,8 +1110,10 @@ final class CellRowTest extends TestCase
 
         $savedColorterm = getenv('COLORTERM');
         $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
         putenv('COLORTERM=');
         putenv('TERM=xterm');
+        putenv('TERM_FEATURES');
 
         try {
             $row = new Row([new Cell('X', 100)]);
@@ -1122,6 +1124,11 @@ final class CellRowTest extends TestCase
             $cacheRef->setValue(null, $savedCache);
             putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
             putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
         }
     }
 
@@ -1135,8 +1142,10 @@ final class CellRowTest extends TestCase
 
         $savedColorterm = getenv('COLORTERM');
         $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
         putenv('COLORTERM=');
         putenv('TERM');
+        putenv('TERM_FEATURES');
 
         try {
             $row = new Row([new Cell('X', 100)]);
@@ -1147,6 +1156,272 @@ final class CellRowTest extends TestCase
             $cacheRef->setValue(null, $savedCache);
             putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
             putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    // --- TERM_FEATURES fallback (Terminal Feature Reporting, 24BIT / T) ---
+
+    public function testToAnsiTermFeatures24BitEnablesTruecolorWhenColortermUnset(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm');
+        putenv('TERM_FEATURES=T3');
+
+        try {
+            // RGB(1,2,3) → code 197633
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesUpgrades256ColorTermToTruecolor(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm-256color');
+        putenv('TERM_FEATURES=T1');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+            $this->assertStringNotContainsString('38;5;', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesTruecolorWithoutTerm(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM');
+        putenv('TERM_FEATURES=T2');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesT0DoesNotEnableTruecolor(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm');
+        putenv('TERM_FEATURES=T0');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringNotContainsString('38;2;', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesLowBitsZeroDoesNotEnableTruecolor(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm');
+        // 24BIT uses a 2-bit mask in the spec; T4 has bits 1|2 clear.
+        putenv('TERM_FEATURES=T4');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringNotContainsString('38;2;', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesParsesTsBeforeT(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm');
+        putenv('TERM_FEATURES=Ts2T1');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiColortermStillOverridesMissing24BitInTermFeatures(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=truecolor');
+        putenv('TERM=xterm');
+        putenv('TERM_FEATURES=T0');
+
+        try {
+            $row = new Row([new Cell('X', 100)]);
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;5;100', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
+        }
+    }
+
+    public function testToAnsiTermFeaturesStripsNonAlphanumericSuffix(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, null);
+        $cacheRef->setValue(null, []);
+
+        $savedColorterm = getenv('COLORTERM');
+        $savedTerm = getenv('TERM');
+        $savedTf = getenv('TERM_FEATURES');
+        putenv('COLORTERM=');
+        putenv('TERM=xterm');
+        putenv('TERM_FEATURES=T3;ignored');
+
+        try {
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+            putenv($savedColorterm !== false ? 'COLORTERM=' . $savedColorterm : 'COLORTERM');
+            putenv($savedTerm !== false ? 'TERM=' . $savedTerm : 'TERM');
+            if ($savedTf !== false) {
+                putenv('TERM_FEATURES=' . $savedTf);
+            } else {
+                putenv('TERM_FEATURES');
+            }
         }
     }
 
