@@ -157,7 +157,7 @@ echo $figlet->render('Hi', ExportFormat::Html3);   // table-based with <font col
 ## Font formats
 
 - `.flf` FIGlet fonts
-- `.tlf` TOIlet fonts (including colored / 256-color glyphs)
+- `.tlf` TOIlet fonts (including colored glyphs: 16 / 256 / truecolor)
 - `.flc` control files
 
 ## Colored TLF fonts
@@ -165,17 +165,32 @@ echo $figlet->render('Hi', ExportFormat::Html3);   // table-based with <font col
 TLF fonts can embed ANSI color escape sequences. The library supports:
 
 - **16 colors** — standard SGR codes (30-37, 40-47, 90-97, 100-107)
-- **256 colors** — compact codes `256..511` (fg) / `512..767` (bg), or legacy `38;5;N` / `48;5;N` sequences (our extension, not part of the original TOIlet format)
+- **256 colors** — compact codes `256..511` (`256 + N`), channel selected by SGR context, or legacy `38;5;N` / `48;5;N` sequences (our extension, not part of the original TOIlet format)
+- **truecolor** — compact codes `512..16777727` (`512 + bgr24`), channel selected by SGR context, decoded to 24-bit RGB inside Text_Figlet
 
-For fonts with 256-color encoding the library transparently decodes the full palette while remaining compatible with `toilet` which uses only the 16-color subset. Standard toilet fonts are loaded as-is.
+When parsing glyph lines, verbose `38;5;N` / `48;5;N` (256-color) and
+`38;2;R;G;B` / `48;2;R;G;B` (truecolor) are accepted as well as the compact
+numeric codes above.
+
+Details: `tools/TLF_COLOR_EXTENSIONS.md`.
+
+For colored fonts the library chooses the best output tier at runtime:
+
+- `COLORTERM=truecolor` or `COLORTERM=24bit` → emit `38;2;R;G;B` / `48;2;R;G;B`
+- `TERM=*256color` → emit `38;5;N` / `48;5;N`
+- otherwise → fall back to base-16 ANSI colors
+
+The compact 256-color and truecolor ranges are Text_Figlet extensions. `toilet`
+continues to use only the 16-color subset and ignores the higher numeric codes.
+Standard TOIlet fonts are loaded as-is.
 
 ## Bundled fonts
 
-The bundle includes 317 fonts:
+The bundle includes 318 fonts:
 
 - Classic FIGlet fonts and redistributable community fonts
 - TOIlet `.tlf` fonts including `emboss`, `emboss2`, `circle`, `future`, `letter`, `pagga`, `smblock`, `smbraille`, `wideterm`
-- `emoji` — 256-color emoji TLF font (1395 glyphs, built with `tools/build_emoji_font.py`)
+- `emoji` / `emoji-truecolor` — color emoji TLF fonts (large Unicode emoji coverage, built with `tools/build_emoji_font.py`; `emoji-truecolor` adds a truecolor layer for 24-bit terminals)
 - JavE fonts with explicit modification/redistribution permission in their headers
 - One bundled CJK font: `gb16fs` (GB2312)
 
@@ -200,7 +215,7 @@ Implements the FIGfont Version 2 specification:
 - German character set (7 required Deutsch characters)
 - Code-tagged characters (decimal, hex, octal)
 - Control files with `t`/`f` commands, range mappings, encoding modes (UTF-8, HZ, Shift-JIS, DBCS), ISO 2022
-- TOIlet `.tlf` fonts with 16/256-color ANSI support
+- TOIlet `.tlf` fonts with 16 / 256 / truecolor ANSI support (Text_Figlet extensions for compact palette and RGB)
 - Color-aware smushing (color follows the winning character)
 
 ## Static analysis

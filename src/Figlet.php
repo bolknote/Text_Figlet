@@ -14,7 +14,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.7.0';
+    public const string VERSION = '2.8.0';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -903,7 +903,7 @@ final class Figlet
                     $resultCh, $leftCh, $rightCh,
                     $line->cellAt($column), $charRow->cellAt($k),
                 );
-                $line = $line->replaceAt($column, new Cell($resultCh, $colorCell->fg, $colorCell->bg));
+                $line = $line->replaceAt($column, Cell::get($resultCh, $colorCell->fg, $colorCell->bg, $colorCell->fgBase16, $colorCell->bgBase16));
             }
         }
         return $line->append($charRow->slice($smushAmount));
@@ -924,7 +924,7 @@ final class Figlet
                 $resultCh, $leftCh, $rightCh,
                 $temp->cellAt($pos), $outRow->cellAt($k),
             );
-            $temp = $temp->replaceAt($pos, new Cell($resultCh, $colorCell->fg, $colorCell->bg));
+            $temp = $temp->replaceAt($pos, Cell::get($resultCh, $colorCell->fg, $colorCell->bg, $colorCell->fgBase16, $colorCell->bgBase16));
         }
         return $temp->append($outRow->slice($smushAmount));
     }
@@ -1097,7 +1097,7 @@ final class Figlet
                 if ($vMode === LayoutMode::Smushing && $topNorm !== ' ' && $bottomNorm !== ' ') {
                     $vResult = $eng->vSmushChar($topNorm, $bottomNorm) ?? $bottomNorm;
                     $colorCell = $eng->pickSmushColor($vResult, $topNorm, $bottomNorm, $topCell, $bottomCell);
-                    $cells[] = new Cell($vResult, $colorCell->fg, $colorCell->bg);
+                    $cells[] = Cell::get($vResult, $colorCell->fg, $colorCell->bg, $colorCell->fgBase16, $colorCell->bgBase16);
                 } else {
                     $cells[] = match (true) {
                         $topNorm === ' ' && $bottomNorm === ' ' => $topCell,

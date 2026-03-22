@@ -6,6 +6,7 @@ namespace Bolk\TextFiglet\Tests;
 
 use RuntimeException;
 use Normalizer;
+use Bolk\TextFiglet\AnsiColor;
 use Bolk\TextFiglet\Cell;
 use Bolk\TextFiglet\ControlFile;
 use Bolk\TextFiglet\Encoding;
@@ -23,6 +24,7 @@ use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
 use Bolk\TextFiglet\Row;
 use Bolk\TextFiglet\SmushEngine;
+use Bolk\TextFiglet\TerminalWidthDetector;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -1073,7 +1075,6 @@ final class FigletTest extends TestCase
     public function testMissingCharacterFallback(): void
     {
         $figlet = $this->fixturedFiglet('smushing.flf');
-        // Character 999 doesn't exist, should not crash
         $result = $figlet->render("\xF0\x8F\xA7\x87");
         $this->assertSame($result, $result);
     }
@@ -1090,7 +1091,6 @@ final class FigletTest extends TestCase
     public function testControlledSmushingRule2Underscore(): void
     {
         $figlet = $this->fixturedFiglet('smushing.flf');
-        // Rendering chars that produce _ next to | should smush
         $result = $figlet->render('_|');
         $this->assertNotEmpty($result);
     }
@@ -1166,7 +1166,6 @@ final class FigletTest extends TestCase
         $figlet->setVerticalLayout(LayoutMode::FullSize);
         $result = $figlet->render("A\nB");
         $lines = explode("\n", $result);
-        // Full size: 2 * height lines + trailing newline
         $this->assertCount(5, $lines);
     }
 
@@ -1187,9 +1186,7 @@ final class FigletTest extends TestCase
     public function testVerticalSmushingDashUnderscore(): void
     {
         $figlet = $this->fixturedFiglet('vertical.flf');
-        // This font has vertical smushing rules 1+4 (equal char + horizontal line)
         $result = $figlet->render("-\n_");
-        // Stacked '-' and '_' should produce '='
         $this->assertStringContainsString('=', $result);
     }
 
@@ -1198,7 +1195,6 @@ final class FigletTest extends TestCase
         $figlet = $this->fixturedFiglet('vertical.flf');
         $result = $figlet->render("|\n|");
         $lines = explode("\n", $result);
-        // Equal chars should smush, reducing total height
         $this->assertLessThan(5, count($lines));
     }
 
@@ -1273,7 +1269,6 @@ final class FigletTest extends TestCase
         $figlet->setWidth(10);
         $result = $figlet->render('Hello World');
         $lines = explode("\n", $result);
-        // Should have wrapped into multiple FIGures (more than height lines)
         $this->assertGreaterThan(2, count($lines));
     }
 
@@ -1292,7 +1287,6 @@ final class FigletTest extends TestCase
         $figlet->setWidth(20);
         $leading = $figlet->render(' A');
         $noLeading = $figlet->render('A');
-        // Leading space should make output wider
         $leadWidth = max(array_map(strlen(...), explode("\n", $leading)));
         $noLeadWidth = max(array_map(strlen(...), explode("\n", $noLeading)));
         $this->assertGreaterThanOrEqual($noLeadWidth, $leadWidth);
@@ -1328,7 +1322,6 @@ final class FigletTest extends TestCase
 
         $result = $figlet->render("A\n\nB");
         $lines = explode("\n", $result);
-        // Double newline stays → two separate FIGures stacked
         $this->assertGreaterThan(2, count($lines));
     }
 
@@ -1336,7 +1329,6 @@ final class FigletTest extends TestCase
     {
         $figlet = $this->fixturedFiglet('smushing.flf');
 
-        // applyParagraphMode: newline at end of input (i + 1 >= len) → kept as newline
         $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n");
         $this->assertSame("A\n", $result);
     }
@@ -1345,7 +1337,6 @@ final class FigletTest extends TestCase
     {
         $figlet = $this->fixturedFiglet('smushing.flf');
 
-        // applyParagraphMode: newline followed by ' ' → kept as newline (not space)
         $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n B");
         $this->assertSame("A\n B", $result);
     }
@@ -1354,7 +1345,6 @@ final class FigletTest extends TestCase
     {
         $figlet = $this->fixturedFiglet('smushing.flf');
 
-        // applyParagraphMode: newline where next char is also newline → kept as newline
         $result = $this->invokeFigletMethod($figlet, 'applyParagraphMode', "A\n\nB");
         $this->assertSame("A\n\nB", $result);
     }
@@ -1369,7 +1359,6 @@ final class FigletTest extends TestCase
         $lines = explode("\n", $result);
         foreach ($lines as $line) {
             if (trim($line) !== '') {
-                // Left-justified: no leading spaces
                 $this->assertSame(ltrim($line), $line);
             }
         }
@@ -1413,7 +1402,6 @@ final class FigletTest extends TestCase
         $figlet->setWidth(40)->setJustification(Justification::Auto);
         $result = $figlet->render('A');
         $lines = explode("\n", $result);
-        // LTR font → flush left
         foreach ($lines as $line) {
             if (trim($line) !== '') {
                 $this->assertSame(ltrim($line), $line);
@@ -1427,7 +1415,6 @@ final class FigletTest extends TestCase
         $figlet->setWidth(40)->setJustification(Justification::Auto);
         $result = $figlet->render('A');
         $lines = explode("\n", $result);
-        // RTL font → flush right → should have leading spaces
         $hasLeadingSpaces = false;
         foreach ($lines as $line) {
             if (trim($line) !== '' && $line !== ltrim($line)) {
@@ -2279,9 +2266,7 @@ final class FigletTest extends TestCase
 
     public function testTerminalWidthViaIoctlReturnsNonNegativeInt(): void
     {
-        $figlet = new Figlet();
-        $result = $this->invokeFigletMethod($figlet, 'terminalWidthViaIoctl');
-        $this->assertIsInt($result);
+        $result = TerminalWidthDetector::detectViaIoctl();
         $this->assertGreaterThanOrEqual(0, $result);
     }
 
@@ -2289,9 +2274,7 @@ final class FigletTest extends TestCase
     #[RequiresOperatingSystem('Darwin|Linux')]
     public function testTerminalWidthViaIoctlWithFfi(): void
     {
-        $figlet = new Figlet();
-        $result = $this->invokeFigletMethod($figlet, 'terminalWidthViaIoctl');
-        $this->assertIsInt($result);
+        $result = TerminalWidthDetector::detectViaIoctl();
         $this->assertGreaterThanOrEqual(0, $result);
     }
 
@@ -2416,6 +2399,30 @@ final class FigletTest extends TestCase
         return implode("\n", $lines) . "\n";
     }
 
+    private function buildTruecolorTlfFont(): string
+    {
+        $header = "tlf2a\$ 1 1 1 -1 0 0";
+        $lines = [$header];
+
+        for ($code = 32; $code < 127; $code++) {
+            if ($code === 65) {
+                $lines[] = "\e[31;287;197633mA\e[0m@";
+            } elseif ($code === 66) {
+                $lines[] = "\e[30;272;44;272;395012mB\e[0m@";
+            } elseif ($code === 32) {
+                $lines[] = ' @';
+            } else {
+                $lines[] = chr($code) . '@';
+            }
+        }
+
+        for ($i = 0; $i < 7; $i++) {
+            $lines[] = 'g@';
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
     public function testColorTlfFontLoadsColors(): void
     {
         $fontPath = $this->writeTempFile($this->buildColorTlfFont(), '.tlf');
@@ -2458,6 +2465,72 @@ final class FigletTest extends TestCase
         $result = $figlet->render('A', ExportFormat::Html3);
         $this->assertStringContainsString('<font color="#aa0000">', $result);
         $this->assertStringNotContainsString("\e[", $result);
+    }
+
+    public function testTruecolorTlfFontPrefers24BitOutput(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildTruecolorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $supportProp = new ReflectionProperty(AnsiColor::class, 'colorSupport');
+        $savedSupport = $supportProp->getValue();
+        $supportProp->setValue(null, 2);
+
+        try {
+            $result = $figlet->render('AB');
+            $this->assertStringContainsString('38;2;1;2;3', $result);
+            $this->assertStringContainsString('48;2;4;5;6', $result);
+        } finally {
+            $supportProp->setValue(null, $savedSupport);
+        }
+    }
+
+    public function testTruecolorTlfFontHtmlExportUsesExactHex(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildTruecolorTlfFont(), '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $result = $figlet->render('AB', ExportFormat::Html);
+        $this->assertStringContainsString('color:#010203', $result);
+        $this->assertStringContainsString('background:#040506', $result);
+    }
+
+    public function testTlfOutOfRangeCompactTruecolorDoesNotLeakColorToNextGlyph(): void
+    {
+        $header = "tlf2a\$ 1 1 1 -1 0 0";
+        $lines = [$header];
+
+        for ($code = 32; $code < 127; $code++) {
+            if ($code === 65) {
+                $lines[] = "\e[16777728;31mA\e[0m@";
+            } elseif ($code === 66) {
+                $lines[] = "B@";
+            } elseif ($code === 32) {
+                $lines[] = ' @';
+            } else {
+                $lines[] = chr($code) . '@';
+            }
+        }
+
+        for ($i = 0; $i < 7; $i++) {
+            $lines[] = 'g@';
+        }
+
+        $fontPath = $this->writeTempFile(implode("\n", $lines) . "\n", '.tlf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+        $figlet->setHorizontalLayout(LayoutMode::FullSize);
+
+        $rendered = rtrim($figlet->render('AB'), "\n");
+        $row = Row::fromAnsi($rendered);
+
+        $this->assertSame('A', $row->cellAt(0)->char);
+        $this->assertSame(1, $row->cellAt(0)->fg);
+        $this->assertSame('B', $row->cellAt(1)->char);
+        $this->assertNull($row->cellAt(1)->fg);
+        $this->assertNull($row->cellAt(1)->bg);
     }
 
     public function testPlainFontTextHasNoAnsiCodes(): void
@@ -2657,7 +2730,6 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        // Color 200: idx=184, r=toVal(5)=255, g=toVal(0)=0, b=toVal(4)=215 → #ff00d7
         $this->setFigletProperty($figlet, 'font', [
             65 => [new Row([new Cell('A', 200)])],
         ]);
@@ -2673,7 +2745,6 @@ final class FigletTest extends TestCase
         $figlet = new Figlet();
         $this->setFigletProperty($figlet, 'height', 1);
         $this->setFigletProperty($figlet, 'hardblank', '$');
-        // Color 240: gray = 8 + 10*(240-232) = 88 → #585858
         $this->setFigletProperty($figlet, 'font', [
             65 => [new Row([new Cell('A', 240)])],
         ]);
@@ -2774,13 +2845,13 @@ final class FigletTest extends TestCase
 
         $toiletFontDir = dirname($this->fontPath('emoji.tlf'));
 
-        $supports256Prop = new ReflectionProperty(Row::class, 'supports256');
-        $downgradeCacheProp = new ReflectionProperty(Row::class, 'downgradeCache');
+        $supports256Prop = new ReflectionProperty(AnsiColor::class, 'colorSupport');
+        $downgradeCacheProp = new ReflectionProperty(AnsiColor::class, 'downgradeCache');
         $saved256 = $supports256Prop->getValue();
         $savedCache = $downgradeCacheProp->getValue();
 
         try {
-            $supports256Prop->setValue(null, false);
+            $supports256Prop->setValue(null, 0);
             $downgradeCacheProp->setValue(null, []);
 
             $emoji = "\u{2764}\u{1F525}\u{2B50}";
@@ -2840,6 +2911,67 @@ final class FigletTest extends TestCase
         }
     }
 
+    /**
+     * Verify emoji.tlf 16-color rendering matches the reference fixture
+     * (captured from toilet output). Runs without toilet installed.
+     */
+    public function testEmoji16ColorMatchesFixture(): void
+    {
+        $supports256Prop = new ReflectionProperty(AnsiColor::class, 'colorSupport');
+        $downgradeCacheProp = new ReflectionProperty(AnsiColor::class, 'downgradeCache');
+        $saved256 = $supports256Prop->getValue();
+        $savedCache = $downgradeCacheProp->getValue();
+
+        try {
+            $supports256Prop->setValue(null, 0);
+            $downgradeCacheProp->setValue(null, []);
+
+            $emoji = "\u{2764}\u{1F525}\u{2B50}";
+
+            $figlet = new Figlet();
+            $figlet->loadFont('emoji');
+            $ourOutput = $figlet->render($emoji);
+
+            $expected = file_get_contents($this->fixturePath('emoji_16color.ansi'));
+            $this->assertNotFalse($expected, 'Cannot read fixture file');
+
+            $ourLines = explode("\n", rtrim($ourOutput, "\n"));
+            $expectedLines = explode("\n", rtrim($expected, "\n"));
+
+            $this->assertCount(count($expectedLines), $ourLines, 'Line count mismatch');
+
+            foreach ($ourLines as $idx => $ourLine) {
+                $ourRow = Row::fromAnsi($ourLine);
+                $expRow = Row::fromAnsi($expectedLines[$idx]);
+
+                $len = max($ourRow->length(), $expRow->length());
+                for ($col = 0; $col < $len; $col++) {
+                    $ourCell = $ourRow->cellAt($col);
+                    $expCell = $expRow->cellAt($col);
+
+                    $this->assertSame(
+                        $expCell->char,
+                        $ourCell->char,
+                        "Char mismatch at row $idx, col $col",
+                    );
+                    $this->assertSame(
+                        $expCell->fg,
+                        $ourCell->fg,
+                        "FG color mismatch at row $idx, col $col (char '{$ourCell->char}')",
+                    );
+                    $this->assertSame(
+                        $expCell->bg,
+                        $ourCell->bg,
+                        "BG color mismatch at row $idx, col $col (char '{$ourCell->char}')",
+                    );
+                }
+            }
+        } finally {
+            $supports256Prop->setValue(null, $saved256);
+            $downgradeCacheProp->setValue(null, $savedCache);
+        }
+    }
+
     // --- NFC Normalization ---
 
     public function testNfcNormalizationComposesCharacters(): void
@@ -2868,9 +3000,7 @@ final class FigletTest extends TestCase
 
         try {
             $this->assertSame(120, Figlet::terminalWidth());
-            
-            // Just test that the function doesn't crash when COLUMNS is absent.
-            // It will fall back to ioctl, tput, stty, or 80.
+
             putenv('COLUMNS=');
             $width = Figlet::terminalWidth();
             $this->assertGreaterThan(0, $width);

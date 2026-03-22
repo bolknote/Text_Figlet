@@ -34,13 +34,15 @@ Source:
 Licensing note:
 Each file includes an explicit permissive/public-domain style notice in its header.
 
-## emoji.tlf (project-built emoji TLF)
+## emoji.tlf / emoji-truecolor.tlf (project-built emoji TLF)
 
 Assets:
-`emoji.tlf`
+`emoji.tlf`, `emoji-truecolor.tlf`
 
 Source:
-Project-built; regenerate with `tools/build_emoji_font.py` if needed.
+Project-built; regenerate with `tools/build_emoji_font.py` (add `--truecolor`
+for `emoji-truecolor.tlf`). `emoji-truecolor.tlf` embeds a 24-bit truecolor layer
+in addition to 16- and 256-color layers (larger file).
 
 Licensing note:
 MIT header embedded in the font comment (see rebuild script / font lines);
@@ -291,7 +293,7 @@ Licensing note:
 `doh.flf`, `doom.flf`, `dotmatrix.flf`, `double.flf`, `doubleshorts.flf`, `drpepper.flf`,
 `dwhistled.flf`, `eftichess.flf`, `eftifont.flf`, `eftipiti.flf`, `eftirobot.flf`,
 `eftitalic.flf`, `eftiwall.flf`, `eftiwater.flf`, `electronic.flf`, `elite.flf`,
-`emboss.tlf`, `emboss2.tlf`, `emoji.tlf`, `epic.flf`, `fauxcyrillic.tlf`, `fender.flf`,
+`emboss.tlf`, `emboss2.tlf`, `emoji-truecolor.tlf`, `emoji.tlf`, `epic.flf`, `fauxcyrillic.tlf`, `fender.flf`,
 `filter.flf`, `fire_font-k.flf`, `fire_font-s.flf`, `flipped.flf`, `flowerpower.flf`,
 `fourtops.flf`, `fraktur.flf`, `frango.flc`, `fullcyrillic.tlf`, `funface.flf`,
 `funfaces.flf`, `future.tlf`, `fuzzy.flf`, `gb16fs.flf`, `ghost.flf`, `ghoulish.flf`,

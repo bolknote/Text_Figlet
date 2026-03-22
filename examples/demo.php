@@ -4,14 +4,149 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
+use Bolk\TextFiglet\AnsiColor;
 use Bolk\TextFiglet\ControlFile;
 use Bolk\TextFiglet\ExportFormat;
 use Bolk\TextFiglet\Figlet;
 use Bolk\TextFiglet\Filter;
 use Bolk\TextFiglet\Justification;
 use Bolk\TextFiglet\LayoutMode;
+use Bolk\TextFiglet\Row;
 
 $fontsDir = __DIR__ . '/../fonts/';
+
+/**
+ * Temporarily set TERM / COLORTERM so {@see Row} picks 16 / 256 / truecolor
+ * (same rules as production). Clears Row static caches so getenv() is applied.
+ *
+ * Tier 0: TERM=xterm, COLORTERM unset → 16-color
+ * Tier 1: TERM=xterm-256color, COLORTERM unset → 256-color
+ * Tier 2: TERM=xterm-256color, COLORTERM=truecolor → truecolor
+ *
+ * @param callable(): void $callback
+ */
+function withTerminalColorTier(int $tier, callable $callback): void
+{
+    if ($tier < 0 || $tier > 2) {
+        throw new \InvalidArgumentException('tier must be 0, 1, or 2');
+    }
+
+    $prevTerm = getenv('TERM');
+    $prevCol = getenv('COLORTERM');
+
+    try {
+        AnsiColor::resetCaches();
+
+        switch ($tier) {
+            case 0:
+                putenv('TERM=xterm');
+                putenv('COLORTERM=');
+                break;
+            case 1:
+                putenv('TERM=xterm-256color');
+                putenv('COLORTERM=');
+                break;
+            case 2:
+                putenv('TERM=xterm-256color');
+                putenv('COLORTERM=truecolor');
+                break;
+        }
+
+        $callback();
+    } finally {
+        if ($prevTerm === false) {
+            putenv('TERM=');
+        } else {
+            putenv('TERM=' . $prevTerm);
+        }
+        if ($prevCol === false) {
+            putenv('COLORTERM=');
+        } else {
+            putenv('COLORTERM=' . $prevCol);
+        }
+
+        AnsiColor::resetCaches();
+    }
+}
+
+/**
+ * Whether the real process environment (before demo putenv) indicates 256-color support.
+ * Matches {@see Row}: true if COLORTERM is truecolor/24bit, or TERM contains "256color".
+ */
+function nativeTerminalSupports256Colors(): bool
+{
+    $ct = getenv('COLORTERM');
+    if (is_string($ct)) {
+        $ct = strtolower($ct);
+        if ($ct === 'truecolor' || $ct === '24bit') {
+            return true;
+        }
+    }
+
+    $term = getenv('TERM');
+
+    return is_string($term) && str_contains($term, '256color');
+}
+
+/**
+ * Whether the real environment indicates 24-bit (truecolor) support (COLORTERM).
+ */
+function nativeTerminalSupportsTruecolor(): bool
+{
+    $ct = getenv('COLORTERM');
+    if (!is_string($ct)) {
+        return false;
+    }
+    $ct = strtolower($ct);
+
+    return $ct === 'truecolor' || $ct === '24bit';
+}
+
+/**
+ * Render one emoji string under 16 / 256 / truecolor tiers (same rules as {@see withTerminalColorTier}).
+ *
+ * Uses emoji.tlf for 16/256-color (its chafa --colors 256 source produces better
+ * base-16 approximations, especially for edge/outline pixels) and
+ * emoji-truecolor.tlf for truecolor.
+ *
+ * @param callable(string): void $subsection
+ */
+function renderEmojiSampleWithTiers(
+    string $label,
+    string $emojiText,
+    Figlet $figlet,
+    ?Figlet $truecolorFiglet,
+    bool $native256,
+    bool $nativeTruecolor,
+    callable $subsection
+): void {
+    $subsection($label . ' — 16-color (TERM=xterm, COLORTERM unset)');
+    withTerminalColorTier(0, static function () use ($figlet, $emojiText): void {
+        echo $figlet->render($emojiText) . "\n";
+    });
+
+    $subsection($label . ' — 256-color (TERM=xterm-256color, COLORTERM unset)');
+    if ($native256) {
+        withTerminalColorTier(1, static function () use ($figlet, $emojiText): void {
+            echo $figlet->render($emojiText) . "\n";
+        });
+    } else {
+        echo "(skipped — this terminal does not report 256-color support; e.g. TERM=*256color* or COLORTERM=truecolor)\n";
+    }
+
+    $subsection($label . ' — truecolor (COLORTERM=truecolor, TERM=xterm-256color)');
+    if ($truecolorFiglet === null) {
+        echo "(skipped — add fonts/emoji-truecolor.tlf via tools/build_emoji_font.py --truecolor)\n";
+    } elseif (!$nativeTruecolor) {
+        echo "(skipped — this terminal does not report truecolor; set COLORTERM=truecolor or COLORTERM=24bit)\n";
+    } else {
+        withTerminalColorTier(2, static function () use ($truecolorFiglet, $emojiText): void {
+            echo $truecolorFiglet->render($emojiText) . "\n";
+        });
+    }
+
+    echo "\n";
+}
 
 function section(string $title): void
 {
@@ -37,14 +172,12 @@ function codePointString(string $text): string
     return implode(' ', $points);
 }
 
-// ============================================================
 section('1. BASIC RENDERING');
 
 $figlet = new Figlet();
 $figlet->loadFont($fontsDir . 'standard.flf');
 echo $figlet->render('Hello!') . "\n";
 
-// ============================================================
 section('2. DIFFERENT FONTS');
 
 foreach (['standard', 'small', 'slant', 'banner', 'makisupa'] as $name) {
@@ -54,7 +187,6 @@ foreach (['standard', 'small', 'slant', 'banner', 'makisupa'] as $name) {
     echo $f->render($name === 'makisupa' ? 'Hey' : ($name === 'banner' ? 'Hi!' : 'FIGlet')) . "\n\n";
 }
 
-// ============================================================
 section('3. FONT COMMENT');
 
 $figlet = new Figlet();
@@ -62,7 +194,6 @@ $figlet->loadFont($fontsDir . 'standard.flf');
 echo "Font: standard.flf\n";
 echo $figlet->fontComment . "\n";
 
-// ============================================================
 section('4. LAYOUT MODES (standard.flf)');
 
 $figlet = new Figlet();
@@ -79,7 +210,6 @@ subsection('Full Width');
 $figlet->setHorizontalLayout(LayoutMode::FullSize);
 echo $figlet->render('AB') . "\n";
 
-// ============================================================
 section('5. SMUSHING RULES IN ACTION');
 
 $figlet = new Figlet();
@@ -97,7 +227,6 @@ echo $figlet->render('][') . "\n\n";
 subsection('Full word smushing');
 echo $figlet->render('Hello World') . "\n";
 
-// ============================================================
 section('6. HTML OUTPUT');
 
 $figlet = new Figlet();
@@ -119,7 +248,6 @@ echo "First 300 chars:\n";
 echo substr($html3Rainbow, 0, 300) . "...\n";
 $figlet->clearFilters();
 
-// ============================================================
 section('7. WORD WRAPPING (small.flf)');
 
 $figlet = new Figlet();
@@ -136,7 +264,6 @@ subsection('With width=25');
 $figlet->setWidth(25);
 echo $figlet->render('Hello World FIGlet') . "\n";
 
-// ============================================================
 section('8. PARAGRAPH MODE (small.flf)');
 
 $figlet = new Figlet();
@@ -151,7 +278,6 @@ subsection('Paragraph mode (newline becomes space)');
 $figlet->setParagraphMode(true);
 echo $figlet->render($text) . "\n";
 
-// ============================================================
 section('9. JUSTIFICATION (small.flf)');
 
 $figlet = new Figlet();
@@ -170,7 +296,6 @@ subsection('Right');
 $figlet->setJustification(Justification::Right);
 echo $figlet->render('Hi') . "\n";
 
-// ============================================================
 section('10. RIGHT-TO-LEFT (ivrit.flf)');
 
 $figlet = new Figlet();
@@ -188,7 +313,6 @@ subsection('RTL with width=50');
 $figlet->setWidth(50);
 echo $figlet->render('Hi') . "\n";
 
-// ============================================================
 section('11. VERTICAL OPERATIONS (slant.flf)');
 
 $figlet = new Figlet();
@@ -206,7 +330,6 @@ subsection('Two lines, vertical Smushing');
 $figlet->setVerticalLayout(LayoutMode::Smushing);
 echo $figlet->render("AB\nCD") . "\n";
 
-// ============================================================
 section('12. UTF-8 AND %uHHHH ENCODING');
 
 $figlet = new Figlet();
@@ -218,7 +341,6 @@ echo $figlet->render('ABC') . "\n\n";
 subsection('Same via %u escapes: %u0041%u0042%u0043');
 echo $figlet->render('%u0041%u0042%u0043') . "\n";
 
-// ============================================================
 section('13. CONTROL FILES');
 
 $figlet = new Figlet();
@@ -248,7 +370,6 @@ $figlet->loadFont($fontsDir . 'gb16fs.flf');
 $figlet->loadControlFile('hz');
 echo $figlet->render($hzInput) . "\n";
 
-// ============================================================
 section('14. MISSING CHARACTER FALLBACK');
 
 $figlet = new Figlet();
@@ -256,7 +377,6 @@ $figlet->loadFont($fontsDir . '5x7.flf');
 echo "Rendering char not in font using 5x7.flf default glyph (code 0):\n";
 echo $figlet->render("\xF0\x9F\x98\x80") . "\n";
 
-// ============================================================
 section('15. FONT METADATA');
 
 foreach (['standard.flf', 'small.flf', 'slant.flf', 'banner.flf', 'ivrit.flf', 'makisupa.flf', 'gb16fs.flf', 'emboss.tlf', 'wideterm.tlf'] as $name) {
@@ -275,7 +395,6 @@ foreach (['standard.flf', 'small.flf', 'slant.flf', 'banner.flf', 'ivrit.flf', '
     );
 }
 
-// ============================================================
 section('16. TLF (TOIlet) FONT SUPPORT');
 
 $figlet = new Figlet();
@@ -295,7 +414,6 @@ $f = new Figlet();
 $f->loadFont('emboss');
 echo $f->render('Hi!') . "\n";
 
-// ============================================================
 section('17. ISO 2022 CONTROL FILES');
 
 subsection('JIS X 0201 control file (ASCII → JIS Roman mapping)');
@@ -310,7 +428,6 @@ $cf = ControlFile::fromString("gL 0\n");
 echo "Encoding mode after g-command: " . $cf->getEncoding()->name . "\n";
 echo "Default ISO 2022 pass-through: '" . $cf->apply('Hi') . "'\n";
 
-// ============================================================
 section('18. CONTROL FILE METADATA');
 
 foreach (['utf8.flc', 'hz.flc', 'frango.flc', 'jis0201.flc'] as $name) {
@@ -330,7 +447,6 @@ foreach (['utf8.flc', 'hz.flc', 'frango.flc', 'jis0201.flc'] as $name) {
     );
 }
 
-// ============================================================
 section('19. FILTERS');
 
 $figlet = new Figlet();
@@ -399,7 +515,6 @@ $figlet->addFilter(Filter::Border)->addFilter(Filter::Rainbow);
 echo $figlet->render('Hello') . "\n\n";
 $figlet->clearFilters();
 
-// ============================================================
 section('20. TERMINAL WIDTH');
 
 $termWidth = Figlet::terminalWidth();
@@ -427,7 +542,6 @@ foreach ($figlet->getLoadedCodepoints() as $cp) {
 echo "Target: ~{$target} columns (1.7× terminal), will wrap automatically\n\n";
 echo $figlet->render($chars) . "\n";
 
-// ============================================================
 section('21. INFOCODE');
 
 $figlet = new Figlet();
@@ -440,7 +554,6 @@ echo "Code 2 (font dir):   " . $figlet->getInfoCode(2) . "\n";
 echo "Code 3 (font name):  " . $figlet->getInfoCode(3) . "\n";
 echo "Code 4 (term width): " . $figlet->getInfoCode(4) . "\n";
 
-// ============================================================
 section('22. UNICODE COMBINING CHARACTERS (NFC normalization)');
 
 $figlet = new Figlet();
@@ -466,7 +579,6 @@ if (class_exists(\Normalizer::class)) {
 subsection('Rendering "café" with combining accent');
 echo $figlet->render("cafe\xCC\x81") . "\n";
 
-// ============================================================
 section('23. UNICODE BIDIRECTIONAL ALGORITHM');
 
 echo "BiDi support: ";
@@ -489,23 +601,35 @@ if (class_exists(\Com\Tecnick\Unicode\Bidi::class)) {
     echo "  composer require tecnickcom/tc-lib-unicode\n";
 }
 
-// ============================================================
 section('24. COLOR EMOJI FONT (TLF with embedded ANSI colors)');
 
+$native256 = nativeTerminalSupports256Colors();
+$nativeTruecolor = nativeTerminalSupportsTruecolor();
+
+$hasTruecolorFont = is_readable($fontsDir . 'emoji-truecolor.tlf');
+$emojiFontPath = $fontsDir . 'emoji.tlf';
+
 $figlet = new Figlet();
-$figlet->loadFont($fontsDir . 'emoji.tlf');
+$figlet->loadFont($emojiFontPath);
 
-echo "Font: emoji.tlf (gzip-compressed body, .tlf extension; 256-color ANSI)\n";
-echo "Emoji are at their real Unicode codepoints, not mapped to ASCII.\n\n";
+$truecolorFiglet = null;
+if ($hasTruecolorFont) {
+    $truecolorFiglet = new Figlet();
+    $truecolorFiglet->loadFont($fontsDir . 'emoji-truecolor.tlf');
+}
 
-subsection('Hearts: ❤️💗💙💚💛💜');
-echo $figlet->render("\u{2764}\u{1F497}\u{1F499}\u{1F49A}\u{1F49B}\u{1F49C}") . "\n";
+echo "Font: emoji.tlf for 16/256-color, emoji-truecolor.tlf for truecolor\n";
+echo "Emoji are at their real Unicode codepoints, not mapped to ASCII.\n";
+echo "16-color sample always runs. 256 / truecolor samples run only if this terminal\n";
+echo "already reports support (TERM/COLORTERM — same rules as Row); temporary putenv for each tier.\n\n";
 
-subsection('Nature: 🔥⭐🌈⚡☀️🌙');
-echo $figlet->render("\u{1F525}\u{2B50}\u{1F308}\u{26A1}\u{2600}\u{1F319}") . "\n";
+$hearts = "\u{2764}\u{1F497}\u{1F499}\u{1F49A}\u{1F49B}\u{1F49C}";
+$nature = "\u{1F525}\u{2B50}\u{1F308}\u{26A1}\u{2600}\u{1F319}";
+$fruit = "\u{1F34E}\u{1F34A}\u{1F34B}\u{1F34C}\u{1F347}\u{1F349}";
 
-subsection('Fruit: 🍎🍊🍋🍌🍇🍉');
-echo $figlet->render("\u{1F34E}\u{1F34A}\u{1F34B}\u{1F34C}\u{1F347}\u{1F349}") . "\n";
+renderEmojiSampleWithTiers('Hearts', $hearts, $figlet, $truecolorFiglet, $native256, $nativeTruecolor, 'subsection');
+renderEmojiSampleWithTiers('Nature: 🔥⭐🌈⚡☀️🌙', $nature, $figlet, $truecolorFiglet, $native256, $nativeTruecolor, 'subsection');
+renderEmojiSampleWithTiers('Fruit: 🍎🍊🍋🍌🍇🍉', $fruit, $figlet, $truecolorFiglet, $native256, $nativeTruecolor, 'subsection');
 
 subsection('HTML output');
 $html = $figlet->render("\u{2764}\u{1F525}\u{2B50}", ExportFormat::Html);

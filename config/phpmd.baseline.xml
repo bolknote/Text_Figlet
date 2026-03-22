@@ -1,7 +1,11 @@
 <?xml version="1.0"?>
 <phpmd-baseline>
   <violation rule="PHPMD\Rule\UnusedPrivateMethod" file="src/ControlFile.php" method="parse"/>
+  <violation rule="PHPMD\Rule\Naming\ShortVariable" file="src/AnsiColor.php"/>
   <violation rule="PHPMD\Rule\Naming\ShortVariable" file="src/Row.php"/>
+  <violation rule="PHPMD\Rule\CyclomaticComplexity" file="src/Row.php" method="parseSgr"/>
+  <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/Row.php" method="parseSgr"/>
+  <violation rule="PHPMD\Rule\Design\LongMethod" file="src/Row.php" method="parseSgr"/>
   <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="vSmushChar"/>
   <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="applyHSmushRules"/>
 </phpmd-baseline>

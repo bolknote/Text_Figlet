@@ -108,14 +108,14 @@ final class Renderer
 
         while ($i < $len) {
             $bg = $cells[$i]->bg;
-            $bgHex = $bg !== null ? ($colorMap[$bg] ?? self::ansi256ToHex($bg)) : null;
+            $bgHex = $bg !== null ? ($colorMap[$bg] ?? AnsiColor::colorToHex($bg)) : null;
             $tdAttr = $bgHex !== null ? ' bgcolor="' . $bgHex . '"' : '';
 
             $span = 0;
             $inner = '';
             while ($i < $len && $cells[$i]->bg === $bg) {
                 $fg = $cells[$i]->fg;
-                $fgHex = $fg !== null ? ($colorMap[$fg] ?? self::ansi256ToHex($fg)) : null;
+                $fgHex = $fg !== null ? ($colorMap[$fg] ?? AnsiColor::colorToHex($fg)) : null;
                 $run = '';
                 $runLen = 0;
 
@@ -166,8 +166,8 @@ final class Renderer
                 $i++;
             }
 
-            $fgHex = $fg !== null ? ($colorMap[$fg] ?? self::ansi256ToHex($fg)) : null;
-            $bgHex = $bg !== null ? ($colorMap[$bg] ?? self::ansi256ToHex($bg)) : null;
+            $fgHex = $fg !== null ? ($colorMap[$fg] ?? AnsiColor::colorToHex($fg)) : null;
+            $bgHex = $bg !== null ? ($colorMap[$bg] ?? AnsiColor::colorToHex($bg)) : null;
 
             if ($fgHex !== null || $bgHex !== null) {
                 $style = '';
@@ -184,28 +184,6 @@ final class Renderer
         }
 
         return $html;
-    }
-
-    private static function ansi256ToHex(int $index): string
-    {
-        if ($index < 0) {
-            return '#000000';
-        }
-        if ($index < 16) {
-            return self::FG_COLORS_FULL[$index];
-        }
-
-        if ($index < 232) {
-            $idx = $index - 16;
-            $red = intdiv($idx, 36);
-            $green = intdiv($idx % 36, 6);
-            $blue = $idx % 6;
-            $toVal = static fn(int $level): int => $level === 0 ? 0 : 55 + 40 * $level;
-            return sprintf('#%02x%02x%02x', $toVal($red), $toVal($green), $toVal($blue));
-        }
-
-        $gray = 8 + 10 * ($index - 232);
-        return sprintf('#%02x%02x%02x', $gray, $gray, $gray);
     }
 
     private static function textToEntities(string $text): string

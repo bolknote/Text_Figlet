@@ -173,7 +173,7 @@ final class FilterEngine
             for ($i = $rowLen - 1; $i >= 0; $i--) {
                 $cell = $row->cellAt($i);
                 $mirrorChar = self::MIRROR_CHARS[$cell->char] ?? $cell->char;
-                $cells[] = new Cell($mirrorChar, $cell->fg, $cell->bg);
+                $cells[] = Cell::get($mirrorChar, $cell->fg, $cell->bg, $cell->fgBase16, $cell->bgBase16);
             }
             $result[] = new Row($cells);
         }
@@ -194,7 +194,7 @@ final class FilterEngine
             for ($i = 0; $i < $rowLen; $i++) {
                 $cell = $row->cellAt($i);
                 $mappedChar = self::FLOP_CHARS[$cell->char] ?? $cell->char;
-                $cells[] = new Cell($mappedChar, $cell->fg, $cell->bg);
+                $cells[] = Cell::get($mappedChar, $cell->fg, $cell->bg, $cell->fgBase16, $cell->bgBase16);
             }
             $result[] = new Row($cells);
         }
@@ -237,7 +237,7 @@ final class FilterEngine
         $newWidth = $height * 2;
         $newHeight = $halfWidth;
 
-        $space = new Cell(' ');
+        $space = Cell::get(' ');
         /** @var array<int, Cell> $flat */
         $flat = array_fill(0, $newWidth * $newHeight, $space);
 
@@ -255,8 +255,8 @@ final class FilterEngine
                     $dest = ($height * ($halfWidth - 1 - $col) + $row) * 2;
                 }
 
-                $flat[$dest] = new Cell($pair[0], $cell0->fg, $cell0->bg);
-                $flat[$dest + 1] = new Cell($pair[1], $cell1->fg, $cell1->bg);
+                $flat[$dest] = Cell::get($pair[0], $cell0->fg, $cell0->bg, $cell0->fgBase16, $cell0->bgBase16);
+                $flat[$dest + 1] = Cell::get($pair[1], $cell1->fg, $cell1->bg, $cell1->fgBase16, $cell1->bgBase16);
             }
         }
 
@@ -317,7 +317,7 @@ final class FilterEngine
             $maxWidth = max($maxWidth, $row->length());
         }
 
-        $space = new Cell(' ');
+        $space = Cell::get(' ');
         $grid = [];
         foreach ($figure as $row) {
             $cells = [];
@@ -394,7 +394,7 @@ final class FilterEngine
                 if ($cell->char !== ' ') {
                     $idx = intdiv($col, $divisor) + $offset;
                     $key = (($idx % $count) + $count) % $count;
-                    $cells[] = new Cell($cell->char, $palette[$key], $cell->bg);
+                    $cells[] = Cell::get($cell->char, $palette[$key], $cell->bg, null, $cell->bgBase16);
                 } else {
                     $cells[] = $cell;
                 }

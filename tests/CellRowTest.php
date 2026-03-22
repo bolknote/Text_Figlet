@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet\Tests;
 
+use Bolk\TextFiglet\AnsiColor;
 use Bolk\TextFiglet\ExportFormat;
 use Bolk\TextFiglet\LayoutMode;
 use Bolk\TextFiglet\Renderer;
@@ -51,6 +52,10 @@ final class CellRowTest extends TestCase
         $this->assertSame(10, $new->fg);
         $this->assertSame('A', $new->char);
         $this->assertSame(2, $new->bg);
+        $layered = new Cell('A', 5, 2, 3, 4);
+        $cleared = $layered->withFg(10);
+        $this->assertNull($cleared->fgBase16);
+        $this->assertSame(4, $cleared->bgBase16);
     }
 
     public function testCellWithBg(): void
@@ -544,10 +549,11 @@ final class CellRowTest extends TestCase
         $this->assertSame(1, $row->cellAt(1)->fg);
     }
 
-    // --- parseSgr: compact 256-color codes (256..511 fg, 512..767 bg) ---
+    // --- parseSgr: compact 256-color codes (context-based, 256+N) ---
 
     public function testFromAnsiCompact256Fg(): void
     {
+        // 256 + 196 = 452, default context = fg
         $row = Row::fromAnsi("\e[452mX\e[0m");
         $this->assertSame('X', $row->toText());
         $this->assertSame(196, $row->cellAt(0)->fg);
@@ -555,39 +561,216 @@ final class CellRowTest extends TestCase
 
     public function testFromAnsiCompact256Bg(): void
     {
-        $row = Row::fromAnsi("\e[534mX\e[0m");
+        // 256 + 22 = 278, preceded by bg16 (41) → context = bg
+        $row = Row::fromAnsi("\e[41;278mX\e[0m");
         $this->assertSame('X', $row->toText());
         $this->assertSame(22, $row->cellAt(0)->bg);
     }
 
     public function testFromAnsiCompact256FgAndBg(): void
     {
-        $row = Row::fromAnsi("\e[456;562mX\e[0m");
+        // fg: 31 sets context=fg, 256+200=456 → fg=200
+        // bg: 41 sets context=bg, 256+50=306 → bg=50
+        $row = Row::fromAnsi("\e[31;456;41;306mX\e[0m");
         $this->assertSame(200, $row->cellAt(0)->fg);
         $this->assertSame(50, $row->cellAt(0)->bg);
     }
 
     public function testFromAnsiCompact256WithBase16(): void
     {
-        $row = Row::fromAnsi("\e[31;554mX\e[0m");
+        // 31 = fg red (context=fg), 256+42=298 preceded by 41 (context=bg)
+        $row = Row::fromAnsi("\e[31;41;298mX\e[0m");
         $this->assertSame(1, $row->cellAt(0)->fg);
         $this->assertSame(42, $row->cellAt(0)->bg);
     }
 
-    // --- buildSgr: 256-color output sequences and color downgrading ---
-    /** @return array{ReflectionProperty, ReflectionProperty} */
-    private function getRowStaticRefs(): array
+    public function testFromAnsiLegacyTruecolorFg(): void
     {
-        $supRef = new ReflectionProperty(Row::class, 'supports256');
-        $cacheRef = new ReflectionProperty(Row::class, 'downgradeCache');
-        return [$supRef, $cacheRef];
+        $row = Row::fromAnsi("\e[38;2;1;2;3mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->fg ?? 0);
+    }
+
+    public function testFromAnsiLegacyTruecolorBg(): void
+    {
+        $row = Row::fromAnsi("\e[48;2;4;5;6mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->bg ?? 0);
+    }
+
+    /** Compact truecolor fg: 512 + bgr24, default context = fg. */
+    public function testFromAnsiCompactTruecolorFg(): void
+    {
+        // RGB(1,2,3) → bgr24=(3<<16)|(2<<8)|1=197121, code=197633
+        $row = Row::fromAnsi("\e[197633mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->fg ?? 0);
+    }
+
+    /** Compact truecolor bg: 512 + bgr24, preceded by bg16. */
+    public function testFromAnsiCompactTruecolorBg(): void
+    {
+        // RGB(4,5,6) → bgr24=(6<<16)|(5<<8)|4=394500, code=395012
+        $row = Row::fromAnsi("\e[40;395012mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->bg ?? 0);
+    }
+
+    /** Context-based truecolor: channel determined by preceding 16-color code. */
+    public function testFromAnsiContextTruecolorFgAndBg(): void
+    {
+        [$supRef] = $this->getColorStaticRefs();
+        $saved = $supRef->getValue();
+        $supRef->setValue(null, 2);
+
+        try {
+            // RGB(0,254,254) → bgr24=(254<<16)|(254<<8)|0=16711168, code=16711680
+            $row = Row::fromAnsi("\e[31;16711680;41;16711680mX\e[0m");
+            $this->assertSame('X', $row->toText());
+
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;0;254;254', $ansi);
+            $this->assertStringContainsString('48;2;0;254;254', $ansi);
+        } finally {
+            $supRef->setValue(null, $saved);
+        }
+    }
+
+    /** Context-based: bg-only delta uses bg16 to set channel. */
+    public function testFromAnsiContextTruecolorBgOnly(): void
+    {
+        // RGB(0,254,254) → bgr24=16711168, code=16711680
+        $row = Row::fromAnsi("\e[41;16711680mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertNull($row->cellAt(0)->fg);
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->bg ?? 0);
+    }
+
+    /** Compact truecolor: 512 + rgb24, min/max range. */
+    public function testFromAnsiCompactTruecolorMinMaxRgb(): void
+    {
+        [$supRef] = $this->getColorStaticRefs();
+        $saved = $supRef->getValue();
+        $supRef->setValue(null, 2);
+
+        try {
+            // FG min: 512 + 0 = 512 (black)
+            $rowMin = Row::fromAnsi("\e[512mX\e[0m");
+            $ansiMin = $rowMin->toAnsi();
+            $this->assertStringContainsString('38;2;0;0;0', $ansiMin);
+
+            // FG max: 512 + 16777215 = 16777727 (white)
+            $rowMax = Row::fromAnsi("\e[16777727mX\e[0m");
+            $ansiMax = $rowMax->toAnsi();
+            $this->assertStringContainsString('38;2;255;255;255', $ansiMax);
+
+            // BG min: 512 preceded by bg16
+            $rowBgMin = Row::fromAnsi("\e[40;512mX\e[0m");
+            $ansiBgMin = $rowBgMin->toAnsi();
+            $this->assertStringContainsString('48;2;0;0;0', $ansiBgMin);
+
+            // BG max: 16777727 preceded by bg16
+            $rowBgMax = Row::fromAnsi("\e[47;16777727mX\e[0m");
+            $ansiBgMax = $rowBgMax->toAnsi();
+            $this->assertStringContainsString('48;2;255;255;255', $ansiBgMax);
+        } finally {
+            $supRef->setValue(null, $saved);
+        }
+    }
+
+    /** 511 is last compact 256-color slot (256+255); 512 is first truecolor. */
+    public function testCompact511Is256Not512IsTruecolor(): void
+    {
+        // 256 + 255 = 511 → 256-color index 255 (default context = fg)
+        $row511 = Row::fromAnsi("\e[511mX\e[0m");
+        $this->assertSame(255, $row511->cellAt(0)->fg);
+
+        // 512 → truecolor rgb24=0 (black, default context = fg)
+        $row512 = Row::fromAnsi("\e[512mX\e[0m");
+        $this->assertGreaterThanOrEqual(16777216, $row512->cellAt(0)->fg ?? 0);
+    }
+
+    public function testFromAnsiIgnoresOutOfRangeCompactTruecolor(): void
+    {
+        // 16,777,727 is the max valid compact truecolor code (512 + 0xFFFFFF).
+        // Larger values must be ignored as unknown SGR parameters.
+        $row = Row::fromAnsi("\e[16777728mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertNull($row->cellAt(0)->fg);
+        $this->assertNull($row->cellAt(0)->bg);
+    }
+
+    public function testFromAnsiIgnoresOutOfRangeCompactTruecolorButContinuesParsing(): void
+    {
+        $row = Row::fromAnsi("\e[16777728;31mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertSame(1, $row->cellAt(0)->fg);
+        $this->assertNull($row->cellAt(0)->bg);
+    }
+
+    public function testFromAnsiCompactTruecolorMaxUsesBackgroundContext(): void
+    {
+        $row = Row::fromAnsi("\e[41;16777727mX\e[0m");
+        $this->assertSame('X', $row->toText());
+        $this->assertNull($row->cellAt(0)->fg);
+        $this->assertGreaterThanOrEqual(16777216, $row->cellAt(0)->bg ?? 0);
+    }
+
+    // --- CUF (Cursor Forward) parsing ---
+
+    public function testFromAnsiCufInsertSpaces(): void
+    {
+        $row = Row::fromAnsi("\e[31mA\e[3CB\e[0m");
+        $this->assertSame(5, $row->length());
+        $this->assertSame('A', $row->cellAt(0)->char);
+        $this->assertSame(' ', $row->cellAt(1)->char);
+        $this->assertSame(' ', $row->cellAt(2)->char);
+        $this->assertSame(' ', $row->cellAt(3)->char);
+        $this->assertSame('B', $row->cellAt(4)->char);
+    }
+
+    public function testFromAnsiCufDefaultIsOne(): void
+    {
+        $row = Row::fromAnsi("A\e[CB");
+        $this->assertSame(3, $row->length());
+        $this->assertSame('A', $row->cellAt(0)->char);
+        $this->assertSame(' ', $row->cellAt(1)->char);
+        $this->assertSame('B', $row->cellAt(2)->char);
+    }
+
+    public function testFromAnsiCufTrailingSpaces(): void
+    {
+        $row = Row::fromAnsi("\e[31mA\e[m\e[6C");
+        $this->assertSame(7, $row->length());
+        $this->assertSame('A', $row->cellAt(0)->char);
+        for ($i = 1; $i <= 6; $i++) {
+            $this->assertSame(' ', $row->cellAt($i)->char, "Cell $i should be space");
+        }
+    }
+
+    public function testFromAnsiCufSpacesHaveNoColor(): void
+    {
+        $row = Row::fromAnsi("\e[31mA\e[3CB\e[0m");
+        $this->assertNull($row->cellAt(1)->fg);
+        $this->assertNull($row->cellAt(2)->fg);
+        $this->assertNull($row->cellAt(3)->fg);
+    }
+
+    // --- buildSgr: 256-color output sequences and color downgrading ---
+    /** @return array{ReflectionProperty, ReflectionProperty, ReflectionProperty} */
+    private function getColorStaticRefs(): array
+    {
+        $supportRef = new ReflectionProperty(AnsiColor::class, 'colorSupport');
+        $cacheRef = new ReflectionProperty(AnsiColor::class, 'downgradeCache');
+        $nearest256Ref = new ReflectionProperty(AnsiColor::class, 'nearest256Cache');
+        return [$supportRef, $cacheRef, $nearest256Ref];
     }
 
     public function testToAnsi256ColorFgProducesExtendedSequence(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $saved = $supRef->getValue();
-        $supRef->setValue(null, true);
+        $supRef->setValue(null, 1);
 
         try {
             $row = new Row([new Cell('X', 200)]);
@@ -600,9 +783,9 @@ final class CellRowTest extends TestCase
 
     public function testToAnsi256ColorBgProducesExtendedSequence(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $saved = $supRef->getValue();
-        $supRef->setValue(null, true);
+        $supRef->setValue(null, 1);
 
         try {
             $row = new Row([new Cell('X', null, 50)]);
@@ -615,14 +798,13 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiDowngrade256ColorFgToBase16(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
         $cacheRef->setValue(null, []);
 
         try {
-            // Color 196 is bright red in the 256-color palette; nearest base-16 is red (1) or bright red (9)
             $row = new Row([new Cell('X', 196)]);
             $ansi = $row->toAnsi();
             $this->assertStringNotContainsString('38;5;', $ansi);
@@ -635,10 +817,10 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiDowngrade256ColorBgToBase16(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
         $cacheRef->setValue(null, []);
 
         try {
@@ -651,18 +833,121 @@ final class CellRowTest extends TestCase
         }
     }
 
-    public function testToAnsiDowngradeUsesCache(): void
+    /** Context-based roundtrip: fg + bg truecolor via 512+rgb24 with 16-color context. */
+    public function testToAnsiTruecolorProduces24BitSequenceContext(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
+        $saved = $supRef->getValue();
+        $supRef->setValue(null, 2);
+
+        try {
+            // fg: 30 (context=fg), 512+197121=197633 → RGB(1,2,3)
+            // bg: 40 (context=bg), 512+394500=395012 → RGB(4,5,6)
+            $row = Row::fromAnsi("\e[30;197633;40;395012mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+            $this->assertStringContainsString('48;2;4;5;6', $ansi);
+        } finally {
+            $supRef->setValue(null, $saved);
+        }
+    }
+
+    /** Context-based roundtrip: same truecolor for both fg and bg. */
+    public function testToAnsiTruecolorSameValueFgBg(): void
+    {
+        [$supRef] = $this->getColorStaticRefs();
+        $saved = $supRef->getValue();
+        $supRef->setValue(null, 2);
+
+        try {
+            // 512+197121=197633 → RGB(1,2,3) for both channels
+            $row = Row::fromAnsi("\e[30;197633;40;197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;2;1;2;3', $ansi);
+            $this->assertStringContainsString('48;2;1;2;3', $ansi);
+        } finally {
+            $supRef->setValue(null, $saved);
+        }
+    }
+
+    public function testToAnsiTruecolorFallsBackTo256(): void
+    {
+        [$supRef] = $this->getColorStaticRefs();
+        $saved = $supRef->getValue();
+        $supRef->setValue(null, 1);
+
+        try {
+            // RGB(18,52,86) → bgr24=(86<<16)|(52<<8)|18=5636114, code=5636626
+            $row = Row::fromAnsi("\e[5636626mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString('38;5;', $ansi);
+            $this->assertStringNotContainsString('38;2;', $ansi);
+        } finally {
+            $supRef->setValue(null, $saved);
+        }
+    }
+
+    public function testToAnsiTruecolorFallsBackTo16(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
+        $cacheRef->setValue(null, []);
+
+        try {
+            // RGB(1,2,3) → bgr24=197121, code=197633
+            $row = Row::fromAnsi("\e[197633mX\e[0m");
+            $ansi = $row->toAnsi();
+            $this->assertStringNotContainsString('38;2;', $ansi);
+            $this->assertStringNotContainsString('38;5;', $ansi);
+            $this->assertStringContainsString("\e[0;", $ansi);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+        }
+    }
+
+    /** TLF multi-layer SGR: use embedded base-16 for 16-color output, not RGB downgrade of 256/truecolor. */
+    public function testToAnsiSixteenColorUsesTlfEmbeddedBase16Layer(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, 0);
+        $cacheRef->setValue(null, []);
+
+        try {
+            $row = Row::fromAnsi("\e[31;308mX\e[0m");
+            $this->assertSame(52, $row->cellAt(0)->fg);
+            $this->assertSame(1, $row->cellAt(0)->fgBase16);
+            $ansi = $row->toAnsi();
+            $this->assertStringContainsString(';31m', $ansi);
+            $this->assertStringNotContainsString('38;5;', $ansi);
+
+            $rowTc = Row::fromAnsi("\e[31;512mX\e[0m");
+            $this->assertSame(1, $rowTc->cellAt(0)->fgBase16);
+            $this->assertGreaterThanOrEqual(AnsiColor::TRUECOLOR_INTERNAL_BASE, $rowTc->cellAt(0)->fg ?? 0);
+            $ansiTc = $rowTc->toAnsi();
+            $this->assertStringContainsString(';31m', $ansiTc);
+            $this->assertStringNotContainsString('38;2;', $ansiTc);
+        } finally {
+            $supRef->setValue(null, $savedSup);
+            $cacheRef->setValue(null, $savedCache);
+        }
+    }
+
+    public function testToAnsiDowngradeUsesCache(): void
+    {
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
+        $savedSup = $supRef->getValue();
+        $savedCache = $cacheRef->getValue();
+        $supRef->setValue(null, 0);
         $cacheRef->setValue(null, []);
 
         try {
             $row1 = new Row([new Cell('A', 196)]);
             $ansi1 = $row1->toAnsi();
-            // Second call with same color should use cache and produce identical output
             $row2 = new Row([new Cell('B', 196)]);
             $ansi2 = $row2->toAnsi();
             $this->assertSame(
@@ -677,10 +962,10 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiDowngradeColorBelow16PassesThrough(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
         $cacheRef->setValue(null, []);
 
         try {
@@ -698,8 +983,6 @@ final class CellRowTest extends TestCase
 
     public function testFromAnsiNegativeVideoSwapsFgBg(): void
     {
-        // \e[32;45m sets fg=2 (green), bg=5 (magenta)
-        // \e[7m activates inverse video → cell stores (bg, fg) = (5, 2)
         $row = Row::fromAnsi("\e[32;45m\e[7mX\e[0m");
         $this->assertSame(5, $row->cellAt(0)->fg);
         $this->assertSame(2, $row->cellAt(0)->bg);
@@ -707,7 +990,6 @@ final class CellRowTest extends TestCase
 
     public function testFromAnsiNegativeVideoThenNormal(): void
     {
-        // X: inverse → fg=5, bg=2; then \e[27m restores normal → Y: fg=2, bg=5
         $row = Row::fromAnsi("\e[32;45m\e[7mX\e[27mY\e[0m");
         $this->assertSame(5, $row->cellAt(0)->fg);
         $this->assertSame(2, $row->cellAt(0)->bg);
@@ -719,14 +1001,12 @@ final class CellRowTest extends TestCase
 
     public function testFromAnsiBoldBoostsAlreadySetFg(): void
     {
-        // \e[31m sets fg=1 (red); then \e[1m applies bold which boosts fg from 1 to 9
         $row = Row::fromAnsi("\e[31m\e[1mX\e[0m");
         $this->assertSame(9, $row->cellAt(0)->fg);
     }
 
     public function testFromAnsiBoldDoesNotBoostFgOf8OrMore(): void
     {
-        // \e[91m sets fg=9 (bright red); then \e[1m bold should not boost (fg >= 8 already)
         $row = Row::fromAnsi("\e[91m\e[1mX\e[0m");
         $this->assertSame(9, $row->cellAt(0)->fg);
     }
@@ -735,7 +1015,6 @@ final class CellRowTest extends TestCase
 
     public function testFromAnsiUnrecognizedSgrCodeIsIgnored(): void
     {
-        // SGR code 50 is not a recognized code; default arm silently ignores it
         $row = Row::fromAnsi("\e[31m\e[50mX\e[0m");
         $this->assertSame(1, $row->cellAt(0)->fg);
     }
@@ -744,14 +1023,13 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiBrightBackground(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $saved = $supRef->getValue();
-        $supRef->setValue(null, true);
+        $supRef->setValue(null, 1);
 
         try {
             $row = new Row([new Cell('X', null, 9)]);
             $ansi = $row->toAnsi();
-            // Bright bg (8-15) uses base code 92 + bg index
             $this->assertStringContainsString(';' . (92 + 9), $ansi);
             $parsed = Row::fromAnsi($ansi);
             $this->assertSame(9, $parsed->cellAt(0)->bg);
@@ -760,11 +1038,11 @@ final class CellRowTest extends TestCase
         }
     }
 
-    // --- supports256Colors: TERM env-var detection paths ---
+    // --- color support detection: TERM / COLORTERM env-var paths ---
 
-    public function testSupports256ColorsTrueViaColortermTruecolor(): void
+    public function testToAnsiColortermTruecolorEmits38_5ForAnsi256Fg(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $supRef->setValue(null, null);
 
@@ -781,9 +1059,9 @@ final class CellRowTest extends TestCase
         }
     }
 
-    public function testSupports256ColorsTrueVia24BitColorterm(): void
+    public function testToAnsiColorterm24bitEmits38_5ForAnsi256Fg(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $supRef->setValue(null, null);
 
@@ -800,9 +1078,9 @@ final class CellRowTest extends TestCase
         }
     }
 
-    public function testSupports256ColorsDetectedViaTermEnvVar(): void
+    public function testToAnsiTerm256colorEmits38_5ForAnsi256Fg(): void
     {
-        [$supRef] = $this->getRowStaticRefs();
+        [$supRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $supRef->setValue(null, null);
 
@@ -822,9 +1100,9 @@ final class CellRowTest extends TestCase
         }
     }
 
-    public function testSupports256ColorsFalseWhenTermNotSet(): void
+    public function testToAnsiTermXtermDowngradesAnsi256FgWithout38_5(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
         $supRef->setValue(null, null);
@@ -847,9 +1125,9 @@ final class CellRowTest extends TestCase
         }
     }
 
-    public function testSupports256ColorsFalseWhenTermEnvVarAbsent(): void
+    public function testToAnsiAbsentTermDowngradesAnsi256FgWithout38_5(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
         $supRef->setValue(null, null);
@@ -863,7 +1141,6 @@ final class CellRowTest extends TestCase
         try {
             $row = new Row([new Cell('X', 100)]);
             $ansi = $row->toAnsi();
-            // With no TERM env var, 256-color support defaults to false → color downgraded
             $this->assertStringNotContainsString('38;5;', $ansi);
         } finally {
             $supRef->setValue(null, $savedSup);
@@ -877,17 +1154,15 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiDowngradeGrayscale256ColorToBase16(): void
     {
-        [$supRef, $cacheRef] = $this->getRowStaticRefs();
+        [$supRef, $cacheRef] = $this->getColorStaticRefs();
         $savedSup = $supRef->getValue();
         $savedCache = $cacheRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
         $cacheRef->setValue(null, []);
 
         try {
-            // Color 232 is the start of the grayscale ramp in the 256-color palette
             $row = new Row([new Cell('X', 232)]);
             $ansi = $row->toAnsi();
-            // Should downgrade to a base-16 color, not use 256-color sequence
             $this->assertStringNotContainsString('38;5;', $ansi);
         } finally {
             $supRef->setValue(null, $savedSup);
@@ -897,14 +1172,13 @@ final class CellRowTest extends TestCase
 
     public function testDowngradeColorForBasicColors(): void
     {
-        $supRef = new ReflectionProperty(Row::class, 'supports256');
+        $supRef = new ReflectionProperty(AnsiColor::class, 'colorSupport');
         $savedSup = $supRef->getValue();
-        $supRef->setValue(null, false);
+        $supRef->setValue(null, 0);
 
         try {
             $row = new Row([new Cell('X', 5)]);
             $ansi = $row->toAnsi();
-            // Should just use the basic color 5 (magenta)
             $this->assertStringContainsString("\e[0;35mX", $ansi);
         } finally {
             $supRef->setValue(null, $savedSup);
@@ -913,9 +1187,8 @@ final class CellRowTest extends TestCase
 
     public function testDowngradeColorBelow16Directly(): void
     {
-        $row = new Row([]);
-        $ref = new ReflectionMethod(Row::class, 'downgradeColor');
-        $this->assertSame(5, $ref->invoke($row, 5));
+        $ref = new ReflectionMethod(AnsiColor::class, 'downgradeColor');
+        $this->assertSame(5, $ref->invoke(null, 5));
     }
 
     public function testRendererFallbackColorForNegativeIndex(): void
@@ -923,6 +1196,13 @@ final class CellRowTest extends TestCase
         $row = new Row([new Cell('A', -1)]);
         $html = Renderer::export([$row], ExportFormat::Html);
         $this->assertStringContainsString('<span style="color:#000000">A</span>', $html);
+    }
+
+    public function testRendererHtmlExportsTruecolorCells(): void
+    {
+        $row = Row::fromAnsi("\e[38;2;1;2;3;48;2;4;5;6mX\e[0m");
+        $html = Renderer::export([$row], ExportFormat::Html);
+        $this->assertStringContainsString('color:#010203;background:#040506', $html);
     }
 
     // --- SmushEngine::pickSmushColor ---
@@ -958,10 +1238,8 @@ final class CellRowTest extends TestCase
 
     public function testToAnsiOnColorlessCellModeRowReturnsPlainText(): void
     {
-        // Constructed with Cell objects → cells mode, but all cells have null fg/bg → hasColor() = false
         $row = new Row([new Cell('H'), new Cell('i')]);
         $this->assertFalse($row->hasColor());
-        // toAnsi() must take the !hasColor() early-return branch and behave like toText()
         $this->assertSame('Hi', $row->toAnsi());
     }
 
@@ -969,7 +1247,6 @@ final class CellRowTest extends TestCase
 
     public function testSmushEmBothHardblankWithoutRule32ReturnsNull(): void
     {
-        // hSmushRules = 1 (rule 1 only, no bit 32) → applyHSmushRules returns null for hardblank+hardblank
         $eng = new SmushEngine('$', 1, 0, 0, LayoutMode::Smushing);
         $result = $eng->smushem('$', '$', 2, 2);
         $this->assertNull($result);
@@ -977,7 +1254,6 @@ final class CellRowTest extends TestCase
 
     public function testSmushEmBothHardblankWithRule32ReturnsLeft(): void
     {
-        // hSmushRules has bit 32 set → returns left hardblank
         $eng = new SmushEngine('$', 32, 0, 0, LayoutMode::Smushing);
         $result = $eng->smushem('$', '$', 2, 2);
         $this->assertSame('$', $result);
@@ -987,7 +1263,6 @@ final class CellRowTest extends TestCase
 
     public function testSmushEmAllHSmushRulesMissReturnsNull(): void
     {
-        // hSmushRules = 1 (equal-char rule only); 'A' and 'B' are different, no other rules set
         $eng = new SmushEngine('$', 1, 0, 0, LayoutMode::Smushing);
         $result = $eng->smushem('A', 'B', 2, 2);
         $this->assertNull($result);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build gzip-compressed fonts/emoji.tlf with optimized SGR encoding.
+"""Build gzip-compressed emoji TLF (default: fonts/emoji.tlf) with optimized SGR encoding.
 
 Optimizations over the original builder:
   1. needs_256_slot  — skip 38;5;N when the color is already exact in base-16
@@ -12,6 +12,10 @@ Optimizations over the original builder:
 
 Usage:
   python3 tools/build_emoji_font.py [--max N] [--output path] [--cache-dir DIR]
+                                     [--truecolor]
+                                     [--truecolor-for U+XXXX ...] [--truecolor-codepoints LIST]
+
+SGR / compact encoding: see tools/TLF_COLOR_EXTENSIONS.md.
 """
 from __future__ import annotations
 
@@ -37,7 +41,9 @@ GLYPH_HEIGHT = 6
 GLYPH_WIDTH = 12
 EMOJI_PX = 64
 CANVAS_PX = EMOJI_PX + 8
-COLOR_OFFSET = 256
+COMPACT_OFFSET = 256
+TRUECOLOR_OFFSET = 512
+INTERNAL_TRUECOLOR_OFFSET = 1 << 24
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _candidate_root = _SCRIPT_DIR.parent
@@ -119,6 +125,37 @@ def collect_emoji_codepoints() -> list[int]:
     return sorted(codes)
 
 
+def parse_codepoint_token(tok: str) -> int:
+    """Parse U+1F600, 0x1F600, 1F600, or decimal."""
+    t = tok.strip()
+    if not t:
+        raise ValueError("empty codepoint token")
+    u = t.upper()
+    if u.startswith("U+"):
+        return int(u[2:], 16)
+    if t.lower().startswith("0x"):
+        return int(t, 16)
+    if t.isdigit():
+        return int(t)
+    return int(t, 16)
+
+
+def parse_truecolor_codepoint_specs(
+    for_tokens: list[str] | None,
+    comma_list: str | None,
+) -> set[int]:
+    out: set[int] = set()
+    if for_tokens:
+        for spec in for_tokens:
+            out.add(parse_codepoint_token(spec))
+    if comma_list:
+        for part in comma_list.split(","):
+            part = part.strip()
+            if part:
+                out.add(parse_codepoint_token(part))
+    return out
+
+
 # ── 16-color / 256-color helpers ─────────────────────────────────────
 
 BASE16_RGB: list[tuple[int, int, int]] = [
@@ -133,6 +170,7 @@ _BASE16_RGB_TO_IDX: dict[tuple[int, int, int], int] = {
 }
 
 _nearest_cache: dict[int, int] = {}
+_nearest_256_cache: dict[int, int] = {}
 _canonical_cache: dict[int, int] = {}
 
 
@@ -145,6 +183,29 @@ def ansi256_to_rgb(idx: int) -> tuple[int, int, int]:
         return (to_val(i // 36), to_val((i % 36) // 6), to_val(i % 6))
     gray = 8 + 10 * (idx - 232)
     return (gray, gray, gray)
+
+
+ANSI256_RGB: list[tuple[int, int, int]] = [ansi256_to_rgb(i) for i in range(256)]
+_ANSI256_RGB_TO_IDX: dict[tuple[int, int, int], int] = {
+    rgb: i for i, rgb in enumerate(ANSI256_RGB)
+}
+
+
+def is_truecolor(code: int) -> bool:
+    return code >= INTERNAL_TRUECOLOR_OFFSET
+
+
+def rgb24_to_truecolor(r: int, g: int, b: int) -> int:
+    return INTERNAL_TRUECOLOR_OFFSET + ((b << 16) | (g << 8) | r)
+
+
+def truecolor_to_rgb(code: int) -> tuple[int, int, int]:
+    bgr = code - INTERNAL_TRUECOLOR_OFFSET
+    return (bgr & 0xFF, (bgr >> 8) & 0xFF, (bgr >> 16) & 0xFF)
+
+
+def color_to_rgb(code: int) -> tuple[int, int, int]:
+    return truecolor_to_rgb(code) if is_truecolor(code) else ansi256_to_rgb(code)
 
 
 def _srgb_to_linear(c: int) -> float:
@@ -189,7 +250,7 @@ def nearest_16(idx: int) -> int:
     if cached is not None:
         return cached
 
-    rgb = ansi256_to_rgb(idx)
+    rgb = color_to_rgb(idx)
 
     if _color_metric == "rgb":
         best = min(
@@ -230,22 +291,46 @@ def nearest_16(idx: int) -> int:
     return best
 
 
+def nearest_256(code: int) -> int:
+    if not is_truecolor(code):
+        return code
+    cached = _nearest_256_cache.get(code)
+    if cached is not None:
+        return cached
+    rgb = truecolor_to_rgb(code)
+    best = min(
+        range(256),
+        key=lambda i: sum((a - b) ** 2 for a, b in zip(rgb, ANSI256_RGB[i])),
+    )
+    _nearest_256_cache[code] = best
+    return best
+
+
 def canonical_color(idx: int) -> int:
-    """Prefer base-16 index when the 256-color has identical RGB."""
+    """Prefer the most compact exact representation for a color."""
     if idx < 16:
         return idx
     cached = _canonical_cache.get(idx)
     if cached is not None:
         return cached
-    base = _BASE16_RGB_TO_IDX.get(ansi256_to_rgb(idx))
-    result = base if base is not None else idx
+    rgb = color_to_rgb(idx)
+    base = _BASE16_RGB_TO_IDX.get(rgb)
+    if base is not None:
+        result = base
+    else:
+        palette = _ANSI256_RGB_TO_IDX.get(rgb)
+        result = palette if palette is not None else idx
     _canonical_cache[idx] = result
     return result
 
 
 def needs_256_slot(idx: int) -> bool:
     """False when a 256-palette index already has an exact base-16 match."""
-    return ansi256_to_rgb(idx) not in _BASE16_RGB_TO_IDX
+    return idx >= 16 and not is_truecolor(idx) and ansi256_to_rgb(idx) not in _BASE16_RGB_TO_IDX
+
+
+def needs_truecolor_slot(idx: int) -> bool:
+    return is_truecolor(idx)
 
 
 def fg_sgr16(color: int) -> str:
@@ -277,9 +362,15 @@ def _apply_sgr(
         elif c == 38 and i + 2 < len(codes) and codes[i + 1] == 5:
             fg = codes[i + 2]
             i += 2
+        elif c == 38 and i + 4 < len(codes) and codes[i + 1] == 2:
+            fg = rgb24_to_truecolor(codes[i + 2], codes[i + 3], codes[i + 4])
+            i += 4
         elif c == 48 and i + 2 < len(codes) and codes[i + 1] == 5:
             bg = codes[i + 2]
             i += 2
+        elif c == 48 and i + 4 < len(codes) and codes[i + 1] == 2:
+            bg = rgb24_to_truecolor(codes[i + 2], codes[i + 3], codes[i + 4])
+            i += 4
         elif 30 <= c <= 37:
             fg = c - 30
         elif 40 <= c <= 47:
@@ -329,24 +420,29 @@ _stat_slots_saved = 0
 
 
 def _emit_color_parts(parts: list[str], fg: int | None, bg: int | None) -> None:
-    """Append 16-color + optional compact 256-color codes for fg and bg.
+    """Append 16-color + optional compact 256-color or truecolor codes.
 
-    Compact encoding: fg → 256+N (range 256..511), bg → 512+N (range 512..767).
-    Replaces the verbose 38;5;N / 48;5;N format, saving 5 chars per color code.
+    Context-based compact encoding (channel determined by preceding 16-color code):
+      256-color → 256+N (range 256..511)
+      truecolor → 512+rgb24 (range 512..16,777,727)
     """
     global _stat_slots_saved
     if fg is not None:
         parts.append(fg_sgr16(nearest_16(fg)))
         if needs_256_slot(fg):
-            parts.append(str(fg + 256))
+            parts.append(str(nearest_256(fg) + COMPACT_OFFSET))
         else:
             _stat_slots_saved += 1
+        if needs_truecolor_slot(fg):
+            parts.append(str(TRUECOLOR_OFFSET + (fg - INTERNAL_TRUECOLOR_OFFSET)))
     if bg is not None:
         parts.append(bg_sgr16(nearest_16(bg)))
         if needs_256_slot(bg):
-            parts.append(str(bg + 512))
+            parts.append(str(nearest_256(bg) + COMPACT_OFFSET))
         else:
             _stat_slots_saved += 1
+        if needs_truecolor_slot(bg):
+            parts.append(str(TRUECOLOR_OFFSET + (bg - INTERNAL_TRUECOLOR_OFFSET)))
 
 
 def encode_optimized(cells: list[tuple[str, int | None, int | None]]) -> str:
@@ -449,11 +545,11 @@ def rewrite_optimized(lines: list[str]) -> list[str]:
 _CURSOR_RE = re.compile(r"\x1b\[\?[0-9;]*[a-zA-Z]")
 
 
-def chafa_to_ansi(png_path: Path) -> list[str] | None:
+def chafa_to_ansi(png_path: Path, *, truecolor: bool = False) -> list[str] | None:
     result = subprocess.run(
         [
             "chafa", "--symbols", "half",
-            "--colors", "256", "--color-space", "din99d",
+            "--colors", "full" if truecolor else "256", "--color-space", "din99d",
             "--work", "9", "--bg", "000000",
             "--size", f"{GLYPH_WIDTH}x{GLYPH_HEIGHT}",
             "--animate=off", "--optimize=9",
@@ -557,6 +653,25 @@ def main() -> None:
     ap.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     ap.add_argument("--no-zopfli", action="store_true", help="Disable zopfli even if installed")
     ap.add_argument(
+        "--truecolor",
+        action="store_true",
+        help="Run chafa in full color for every glyph (256-color mode off)",
+    )
+    ap.add_argument(
+        "--truecolor-for",
+        action="append",
+        metavar="CODEPOINT",
+        help=(
+            "In default 256-color mode, run chafa in truecolor for this codepoint "
+            "(repeat or use --truecolor-codepoints). Forms: U+1F600, 0x1F600, 1F600"
+        ),
+    )
+    ap.add_argument(
+        "--truecolor-codepoints",
+        metavar="LIST",
+        help="Comma-separated codepoints for per-glyph truecolor (same forms as --truecolor-for)",
+    )
+    ap.add_argument(
         "--color-metric", choices=["rgb", "lab", "lab-chroma"], default="lab-chroma",
         help="16-color mapping: rgb (Euclidean), lab (CIE L*a*b*), lab-chroma (Lab + chroma penalty)",
     )
@@ -564,9 +679,30 @@ def main() -> None:
     use_zopfli = HAS_ZOPFLI and not args.no_zopfli
     set_color_metric(args.color_metric)
 
+    truecolor_override = parse_truecolor_codepoint_specs(
+        args.truecolor_for,
+        args.truecolor_codepoints,
+    )
+    if truecolor_override and args.truecolor:
+        print(
+            "Note: --truecolor applies to all glyphs; --truecolor-for / "
+            "--truecolor-codepoints are redundant.",
+            file=sys.stderr,
+        )
+
     codepoints = collect_emoji_codepoints()
     if args.max > 0:
         codepoints = codepoints[: args.max]
+
+    if truecolor_override:
+        in_build = set(codepoints)
+        missing = sorted(truecolor_override - in_build)
+        if missing:
+            print(
+                "WARN: --truecolor-for / --truecolor-codepoints not in current build: "
+                + ", ".join(f"U+{c:04X}" for c in missing),
+                file=sys.stderr,
+            )
 
     font_path = find_emoji_font()
     args.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -575,6 +711,11 @@ def main() -> None:
     compressor = "zopfli" if use_zopfli else "gzip-9"
     print(f"Pillow font: {font_path}")
     print(f"Codepoints: {len(codepoints)}, cache: {args.cache_dir}, compress: {compressor}")
+    if truecolor_override and not args.truecolor:
+        print(
+            f"Per-glyph truecolor (chafa full): {len(truecolor_override)} codepoint(s)",
+            file=sys.stderr,
+        )
     font = ImageFont.truetype(font_path, EMOJI_PX)
 
     _stat_toggles = _stat_deltas = _stat_resets = _stat_slots_saved = 0
@@ -584,7 +725,8 @@ def main() -> None:
     for cp in codepoints:
         png = args.cache_dir / f"{cp:04x}.png"
         render_png(cp, png, font)
-        lines = chafa_to_ansi(png)
+        use_truecolor = args.truecolor or cp in truecolor_override
+        lines = chafa_to_ansi(png, truecolor=use_truecolor)
         if lines is None:
             print(f"  WARN chafa U+{cp:04X}")
             continue
@@ -599,11 +741,33 @@ def main() -> None:
         "publish, distribute, sublicense, and/or sell copies of the font.", "",
         'THE FONT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.',
     ]
+    out_name = args.output.name
+    hybrid_note = ""
+    tc_sorted = sorted(truecolor_override)
+    if truecolor_override and not args.truecolor:
+        if len(tc_sorted) <= 12:
+            hybrid_note = "+hybrid256+tc(" + ",".join(f"U+{c:04X}" for c in tc_sorted) + ")"
+        else:
+            hybrid_note = f"+hybrid256+tc({len(tc_sorted)}cps)"
+
+    tc_rebuild = ""
+    if truecolor_override and not args.truecolor:
+        if len(tc_sorted) <= 4:
+            tc_rebuild = " ".join(f" --truecolor-for U+{c:04X}" for c in tc_sorted)
+        else:
+            tc_rebuild = " --truecolor-codepoints " + ",".join(f"U+{c:04X}" for c in tc_sorted)
+
     comments = [
-        "emoji.tlf - optimized encoding (reverse+delta+needs_256_slot+decolor+no_0)",
+        f"{out_name} - optimized encoding (reverse+delta+needs_256_slot+decolor+no_0"
+        + ("+truecolor" if args.truecolor else "")
+        + hybrid_note
+        + ")",
         "",
         "Build pipeline tag: python-pillow.",
-        "Rebuild: python3 tools/build_emoji_font.py",
+        "Rebuild: python3 tools/build_emoji_font.py"
+        + (" --truecolor" if args.truecolor else "")
+        + tc_rebuild
+        + (f" --output {out_name}" if out_name != "emoji.tlf" else ""),
         *license_block,
     ]
 
@@ -612,7 +776,6 @@ def main() -> None:
     gz = compress(raw_bytes, use_zopfli=use_zopfli)
     args.output.write_bytes(gz)
 
-    # ── Report ──────────────────────────────────────────────────────
     raw_sz = len(raw_bytes)
     gz_sz = len(gz)
     total_sgr = _stat_toggles + _stat_deltas + _stat_resets

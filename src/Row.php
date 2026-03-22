@@ -7,18 +7,12 @@ namespace Bolk\TextFiglet;
 /** @psalm-api */
 final class Row
 {
-    /** @var list<Cell>|null Cell objects (used when colors are present) */
+    /** @var list<Cell>|null */
     private ?array $cells;
 
-    /** @var string|null Plain text (used when no colors) */
     private ?string $text;
 
     private ?bool $colorCached = null;
-
-    private static ?bool $supports256 = null;
-
-    /** @var array<int, int> */
-    private static array $downgradeCache = [];
 
     /** @param list<Cell> $cells */
     public function __construct(array $cells = [])
@@ -51,10 +45,10 @@ final class Row
     public function cellAt(int $position): Cell
     {
         if ($this->cells !== null) {
-            return $this->cells[$position] ?? new Cell(' ');
+            return $this->cells[$position] ?? Cell::get(' ');
         }
         $ch = mb_substr($this->text ?? '', $position, 1, 'UTF-8');
-        return new Cell($ch !== '' ? $ch : ' ');
+        return Cell::get($ch !== '' ? $ch : ' ');
     }
 
     public function slice(int $start, ?int $length = null): self
@@ -109,7 +103,7 @@ final class Row
         }
 
         if ($this->cells !== null) {
-            $space = new Cell(' ');
+            $space = Cell::get(' ');
             return new self(array_merge($this->cells, array_fill(0, $pad, $space)));
         }
 
@@ -125,7 +119,7 @@ final class Row
             $changed = false;
             foreach ($this->cells as $cell) {
                 if ($cell->char === $from) {
-                    $cells[] = new Cell($to, $cell->fg, $cell->bg);
+                    $cells[] = Cell::get($to, $cell->fg, $cell->bg, $cell->fgBase16, $cell->bgBase16);
                     $changed = true;
                 } else {
                     $cells[] = $cell;
@@ -190,15 +184,19 @@ final class Row
         $result = '';
         $prevFg = -1;
         $prevBg = -1;
+        $prevFg16 = -2;
+        $prevBg16 = -2;
         $colorActive = false;
 
         foreach ($this->cells as $cell) {
             $fgKey = $cell->fg ?? -2;
             $bgKey = $cell->bg ?? -2;
+            $fg16Key = $cell->fgBase16 ?? -2;
+            $bg16Key = $cell->bgBase16 ?? -2;
 
-            if ($fgKey !== $prevFg || $bgKey !== $prevBg) {
+            if ($fgKey !== $prevFg || $bgKey !== $prevBg || $fg16Key !== $prevFg16 || $bg16Key !== $prevBg16) {
                 if ($cell->fg !== null || $cell->bg !== null) {
-                    $result .= $this->buildSgr($cell->fg, $cell->bg);
+                    $result .= AnsiColor::buildSgr($cell->fg, $cell->bg, $cell->fgBase16, $cell->bgBase16);
                     $colorActive = true;
                 } elseif ($colorActive) {
                     $result .= "\e[0m";
@@ -206,6 +204,8 @@ final class Row
                 }
                 $prevFg = $fgKey;
                 $prevBg = $bgKey;
+                $prevFg16 = $fg16Key;
+                $prevBg16 = $bg16Key;
             }
 
             $result .= $cell->char;
@@ -216,173 +216,6 @@ final class Row
         }
 
         return $result;
-    }
-
-    private function supports256Colors(): bool
-    {
-        if (self::$supports256 !== null) {
-            return self::$supports256;
-        }
-
-        $colorterm = getenv('COLORTERM');
-        if ($colorterm === 'truecolor' || $colorterm === '24bit') {
-            return self::$supports256 = true;
-        }
-
-        $term = getenv('TERM');
-        if (!is_string($term)) {
-            return self::$supports256 = false;
-        }
-        return self::$supports256 = str_contains($term, '256color');
-    }
-
-    private function downgradeColor(int $color): int
-    {
-        if ($color < 16) {
-            return $color;
-        }
-
-        if (isset(self::$downgradeCache[$color])) {
-            return self::$downgradeCache[$color];
-        }
-
-        $rgb = $this->ansi256ToRgb($color);
-        $best = $this->nearestBase16($rgb);
-
-        return self::$downgradeCache[$color] = $best;
-    }
-
-    /** @return array{int, int, int} */
-    private function ansi256ToRgb(int $color): array
-    {
-        $toVal = static fn(int $level): int => $level === 0 ? 0 : 55 + 40 * $level;
-
-        if ($color < 232) {
-            $idx = $color - 16;
-            return [$toVal(intdiv($idx, 36)), $toVal(intdiv($idx % 36, 6)), $toVal(abs($idx % 6))];
-        }
-
-        $gray = 8 + 10 * ($color - 232);
-        return [$gray, $gray, $gray];
-    }
-
-    private const BASE16_RGB = [
-        [0, 0, 0], [170, 0, 0], [0, 170, 0], [170, 85, 0],
-        [0, 0, 170], [170, 0, 170], [0, 170, 170], [170, 170, 170],
-        [85, 85, 85], [255, 85, 85], [85, 255, 85], [255, 255, 85],
-        [85, 85, 255], [255, 85, 255], [85, 255, 255], [255, 255, 255],
-    ];
-
-    /** @var list<array{float, float, float}>|null */
-    private static ?array $base16Lab = null;
-
-    /** @return array{float, float, float} */
-    private function rgbToLab(int $r, int $g, int $b): array
-    {
-        $toLinear = static function (int $c): float {
-            $v = (float) $c / 255.0;
-            return $v <= 0.04045 ? $v / 12.92 : (($v + 0.055) / 1.055) ** 2.4;
-        };
-        $rl = $toLinear($r);
-        $gl = $toLinear($g);
-        $bl = $toLinear($b);
-
-        $xyzX = 0.4124564 * $rl + 0.3575761 * $gl + 0.1804375 * $bl;
-        $xyzY = 0.2126729 * $rl + 0.7151522 * $gl + 0.0721750 * $bl;
-        $xyzZ = 0.0193339 * $rl + 0.1191920 * $gl + 0.9503041 * $bl;
-
-        $labF = (static fn(float $val): float => $val > 0.008856 ? $val ** (1.0 / 3.0) : 7.787 * $val + 16.0 / 116.0);
-        $labX = $labF($xyzX / 0.95047);
-        $labY = $labF($xyzY / 1.0);
-        $labZ = $labF($xyzZ / 1.08883);
-
-        return [116.0 * $labY - 16.0, 500.0 * ($labX - $labY), 200.0 * ($labY - $labZ)];
-    }
-
-    /** @param array{float, float, float} $lab */
-    private function labChroma(array $lab): float
-    {
-        return sqrt($lab[1] ** 2.0 + $lab[2] ** 2.0);
-    }
-
-    /** @param array{int, int, int} $rgb */
-    private function nearestBase16(array $rgb): int
-    {
-        if (self::$base16Lab === null) {
-            self::$base16Lab = [];
-            foreach (self::BASE16_RGB as $ref) {
-                self::$base16Lab[] = $this->rgbToLab($ref[0], $ref[1], $ref[2]);
-            }
-        }
-
-        $lab = $this->rgbToLab($rgb[0], $rgb[1], $rgb[2]);
-        $srcChroma = $this->labChroma($lab);
-        $srcHue = $srcChroma > 5.0 ? atan2($lab[2], $lab[1]) : 0.0;
-
-        $best = 0;
-        $bestDist = PHP_FLOAT_MAX;
-
-        foreach (self::$base16Lab as $idx => $ref) {
-            $dist = ($lab[0] - $ref[0]) ** 2.0 + ($lab[1] - $ref[1]) ** 2.0 + ($lab[2] - $ref[2]) ** 2.0;
-
-            if ($srcChroma > 5.0) {
-                $tgtChroma = $this->labChroma($ref);
-                if ($tgtChroma < 5.0) {
-                    $dist += ($srcChroma * 4.0) ** 2.0;
-                } else {
-                    $tgtHue = atan2($ref[2], $ref[1]);
-                    $deltaHue = abs($srcHue - $tgtHue);
-                    if ($deltaHue > M_PI) {
-                        $deltaHue = 2.0 * M_PI - $deltaHue;
-                    }
-                    $huePenalty = $srcChroma * 5.0 * sin($deltaHue / 2.0);
-                    $dist += $huePenalty ** 2.0;
-                }
-            }
-
-            if ($dist < $bestDist) {
-                $bestDist = $dist;
-                $best = $idx;
-            }
-        }
-
-        return $best;
-    }
-
-    private function buildSgr(?int $fg, ?int $bg): string
-    {
-        if (!$this->supports256Colors()) {
-            if ($fg !== null && $fg >= 16) {
-                $fg = $this->downgradeColor($fg);
-            }
-            if ($bg !== null && $bg >= 16) {
-                $bg = $this->downgradeColor($bg);
-            }
-        }
-
-        $seq = "\e[0";
-
-        if ($fg !== null) {
-            if ($fg < 8) {
-                $seq .= ';' . (30 + $fg);
-            } elseif ($fg < 16) {
-                $seq .= ';' . (82 + $fg);
-            } else {
-                $seq .= ';38;5;' . $fg;
-            }
-        }
-
-        if ($bg !== null) {
-            if ($bg < 8) {
-                $seq .= ';' . (40 + $bg);
-            } elseif ($bg < 16) {
-                $seq .= ';' . (92 + $bg);
-            } else {
-                $seq .= ';48;5;' . $bg;
-            }
-        }
-
-        return $seq . 'm';
     }
 
     public static function fromString(string $text): self
@@ -398,38 +231,71 @@ final class Row
             return self::fromString($text);
         }
 
-        $cells = [];
-        $fg = null;
-        $bg = null;
-        $bold = false;
-        $negative = false;
-        $hasColor = false;
-        $len = strlen($text);
+        $state = new AnsiRowParseState();
+        $len = \strlen($text);
 
         for ($i = 0; $i < $len;) {
-            if ($text[$i] === "\e" && $i + 1 < $len && $text[$i + 1] === '[') {
-                $i = self::consumeSgr($text, $i + 2, $len, $fg, $bg, $bold, $negative);
-                if ($fg !== null || $bg !== null) {
-                    $hasColor = true;
-                }
-                continue;
-            }
-
-            [$char, $i] = self::readUtf8Char($text, $i);
-            if ($char === null) {
-                continue;
-            }
-
-            $cells[] = $negative
-                ? new Cell($char, $bg, $fg)
-                : new Cell($char, $fg, $bg);
+            $i = self::fromAnsiAdvance($text, $i, $len, $state);
         }
 
-        if (!$hasColor) {
-            return self::fromString(implode('', array_map(static fn(Cell $cell): string => $cell->char, $cells)));
+        if (!$state->hasColor) {
+            return self::fromString(implode('', array_map(static fn(Cell $cell): string => $cell->char, $state->cells)));
         }
 
-        return new self($cells);
+        return new self($state->cells);
+    }
+
+    private static function fromAnsiAdvance(string $text, int $i, int $len, AnsiRowParseState $state): int
+    {
+        if ($text[$i] === "\e" && $i + 1 < $len && $text[$i + 1] === '[') {
+            return self::fromAnsiHandleCsi($text, $i, $len, $state);
+        }
+
+        [$char, $next] = self::readUtf8Char($text, $i);
+        if ($char === null) {
+            return $next;
+        }
+
+        $state->cells[] = $state->negative
+            ? Cell::get($char, $state->bg, $state->fg, $state->bgBase16, $state->fgBase16)
+            : Cell::get($char, $state->fg, $state->bg, $state->fgBase16, $state->bgBase16);
+
+        return $next;
+    }
+
+    private static function fromAnsiHandleCsi(string $text, int $i, int $len, AnsiRowParseState $state): int
+    {
+        $j = $i + 2;
+        $num = '';
+        while ($j < $len && $text[$j] >= '0' && $text[$j] <= '9') {
+            $num .= $text[$j];
+            $j++;
+        }
+        if ($j < $len && $text[$j] === 'C') {
+            $n = $num === '' ? 1 : (int) $num;
+            for ($k = 0; $k < $n; $k++) {
+                $state->cells[] = Cell::get(' ');
+            }
+
+            return $j + 1;
+        }
+
+        $next = self::consumeSgr(
+            $text,
+            $i + 2,
+            $len,
+            $state->fg,
+            $state->bg,
+            $state->bold,
+            $state->negative,
+            $state->fgBase16,
+            $state->bgBase16,
+        );
+        if ($state->fg !== null || $state->bg !== null) {
+            $state->hasColor = true;
+        }
+
+        return $next;
     }
 
     /** @return array{string|null, int} */
@@ -448,7 +314,7 @@ final class Row
             default => 0,
         };
 
-        if ($seqLen === 0 || $i + $seqLen > strlen($text)) {
+        if ($seqLen === 0 || $i + $seqLen > \strlen($text)) {
             return [null, $i + 1];
         }
 
@@ -463,6 +329,8 @@ final class Row
         ?int &$bg,
         bool &$bold,
         bool &$negative,
+        ?int &$fgBase16,
+        ?int &$bgBase16,
     ): int {
         $params = '';
         while ($i < $len && ($text[$i] === ';' || ($text[$i] >= '0' && $text[$i] <= '9'))) {
@@ -471,38 +339,182 @@ final class Row
         }
         if ($i < $len && $text[$i] === 'm') {
             $i++;
-            self::parseSgr($params, $fg, $bg, $bold, $negative);
+            self::parseSgr($params, $fg, $bg, $bold, $negative, $fgBase16, $bgBase16);
         }
         return $i;
     }
 
-    private static function parseSgr(string $params, ?int &$fg, ?int &$bg, bool &$bold, bool &$negative): void
-    {
+    private static function parseSgr(
+        string $params,
+        ?int &$fg,
+        ?int &$bg,
+        bool &$bold,
+        bool &$negative,
+        ?int &$fgBase16,
+        ?int &$bgBase16,
+    ): void {
         if ($params === '' || $params === '0') {
             $fg = null;
             $bg = null;
             $bold = false;
             $negative = false;
+            $fgBase16 = null;
+            $bgBase16 = null;
+
             return;
         }
+
+        $captureFg16 = null;
+        $captureBg16 = null;
+        $sawFgCompact = false;
+        $sawBgCompact = false;
+        $anyFgOp = false;
+        $anyBgOp = false;
+        $lastChannel = 'fg';
 
         $codes = array_map(intval(...), explode(';', $params));
         $count = count($codes);
 
         for ($i = 0; $i < $count; $i++) {
-            self::applySgrCode($codes[$i], $fg, $bg, $bold, $negative);
+            $c = $codes[$i];
+
+            if ($c === 38 && $i + 2 < $count && $codes[$i + 1] === 5) {
+                $sawFgCompact = true;
+                $fg = $codes[$i + 2];
+                $anyFgOp = true;
+                $lastChannel = 'fg';
+                $i += 2;
+                continue;
+            }
+
+            if ($c === 48 && $i + 2 < $count && $codes[$i + 1] === 5) {
+                $sawBgCompact = true;
+                $bg = $codes[$i + 2];
+                $anyBgOp = true;
+                $lastChannel = 'bg';
+                $i += 2;
+                continue;
+            }
+
+            if ($c === 38 && $i + 4 < $count && $codes[$i + 1] === 2) {
+                $sawFgCompact = true;
+                $fg = AnsiColor::truecolorFromRgb($codes[$i + 2], $codes[$i + 3], $codes[$i + 4]);
+                $anyFgOp = true;
+                $lastChannel = 'fg';
+                $i += 4;
+                continue;
+            }
+
+            if ($c === 48 && $i + 4 < $count && $codes[$i + 1] === 2) {
+                $sawBgCompact = true;
+                $bg = AnsiColor::truecolorFromRgb($codes[$i + 2], $codes[$i + 3], $codes[$i + 4]);
+                $anyBgOp = true;
+                $lastChannel = 'bg';
+                $i += 4;
+                continue;
+            }
+
+            if ($c >= AnsiColor::COMPACT_BASE && $c < AnsiColor::TRUECOLOR_BASE) {
+                $idx = $c - AnsiColor::COMPACT_BASE;
+                if ($lastChannel === 'bg') {
+                    $sawBgCompact = true;
+                    $bg = $idx;
+                    $anyBgOp = true;
+                } else {
+                    $sawFgCompact = true;
+                    $fg = $idx;
+                    $anyFgOp = true;
+                }
+                continue;
+            }
+
+            if ($c >= AnsiColor::TRUECOLOR_BASE && $c <= AnsiColor::TRUECOLOR_COMPACT_MAX) {
+                $tcValue = AnsiColor::TRUECOLOR_INTERNAL_BASE + ($c - AnsiColor::TRUECOLOR_BASE);
+                if ($lastChannel === 'bg') {
+                    $sawBgCompact = true;
+                    $bg = $tcValue;
+                    $anyBgOp = true;
+                } else {
+                    $sawFgCompact = true;
+                    $fg = $tcValue;
+                    $anyFgOp = true;
+                }
+                continue;
+            }
+
+            if ($c === 0) {
+                $fg = null;
+                $bg = null;
+                $bold = false;
+                $negative = false;
+                $captureFg16 = null;
+                $captureBg16 = null;
+                $sawFgCompact = false;
+                $sawBgCompact = false;
+                $anyFgOp = true;
+                $anyBgOp = true;
+                $lastChannel = 'fg';
+                continue;
+            }
+
+            self::applySgrCode($c, $fg, $bg, $bold, $negative);
+
+            if ($c === 39) {
+                $captureFg16 = null;
+                $anyFgOp = true;
+                $lastChannel = 'fg';
+                continue;
+            }
+
+            if ($c === 49) {
+                $captureBg16 = null;
+                $anyBgOp = true;
+                $lastChannel = 'bg';
+                continue;
+            }
+
+            if ($c === 1 || $c === 22 || ($c >= 30 && $c <= 37) || ($c >= 90 && $c <= 97)) {
+                $anyFgOp = true;
+                $lastChannel = 'fg';
+                if (!$sawFgCompact && $fg !== null && $fg < 16) {
+                    $captureFg16 = $fg;
+                }
+                continue;
+            }
+
+            if (($c >= 40 && $c <= 47) || ($c >= 100 && $c <= 107)) {
+                $anyBgOp = true;
+                $lastChannel = 'bg';
+                if (!$sawBgCompact && $bg !== null && $bg < 16) {
+                    $captureBg16 = $bg;
+                }
+            }
+        }
+
+        if ($anyFgOp) {
+            if ($fg === null) {
+                $fgBase16 = null;
+            } elseif ($captureFg16 !== null) {
+                $fgBase16 = $captureFg16;
+            } else {
+                $fgBase16 = null;
+            }
+        }
+
+        if ($anyBgOp) {
+            if ($bg === null) {
+                $bgBase16 = null;
+            } elseif ($captureBg16 !== null) {
+                $bgBase16 = $captureBg16;
+            } else {
+                $bgBase16 = null;
+            }
         }
     }
 
     private static function applySgrCode(int $code, ?int &$fg, ?int &$bg, bool &$bold, bool &$negative): void
     {
         match (true) {
-            $code === 0 => (static function () use (&$fg, &$bg, &$bold, &$negative): void {
-                $fg = null;
-                $bg = null;
-                $bold = false;
-                $negative = false;
-            })(),
             $code === 1 => (static function () use (&$fg, &$bold): void {
                 $bold = true;
                 if ($fg !== null && $fg < 8) {
@@ -523,8 +535,6 @@ final class Row
             $code === 49 => $bg = null,
             $code >= 90 && $code <= 97 => $fg = $code - 90 + 8,
             $code >= 100 && $code <= 107 => $bg = $code - 100 + 8,
-            $code >= 256 && $code <= 511 => $fg = $code - 256,
-            $code >= 512 && $code <= 767 => $bg = $code - 512,
             default => null,
         };
     }
@@ -546,7 +556,7 @@ final class Row
         $cells = [];
         $len = mb_strlen($text, 'UTF-8');
         for ($i = 0; $i < $len; $i++) {
-            $cells[] = new Cell(mb_substr($text, $i, 1, 'UTF-8'));
+            $cells[] = Cell::get(mb_substr($text, $i, 1, 'UTF-8'));
         }
         return $cells;
     }

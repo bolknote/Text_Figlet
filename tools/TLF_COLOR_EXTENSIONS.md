@@ -1,44 +1,115 @@
-# Emoji TLF Color Format
+# TLF color extensions (256-color and truecolor)
 
-This document describes the color encoding used in `emoji.tlf`, built by
-`build_emoji_font.py`. The format extends the standard TOIlet TLF color model
-with 256-color support while remaining fully compatible with TOIlet (libcaca).
+Text_Figlet extends the usual TOIlet TLF color model (16-color SGR) with
+**compact 256-color** and **compact truecolor** codes inside glyph-line ANSI
+sequences. Extensions stay compatible with [TOIlet](http://caca.zoy.org/wiki/toilet)
+(libcaca): TOIlet applies the base-16 codes and silently skips unknown numeric
+parameters.
 
-## Dual-color SGR
+The bundled **emoji** fonts (`emoji.tlf`, `emoji-truecolor.tlf`) are the main
+reference fonts that use this encoding; they are built with
+`build_emoji_font.py` (pass `--truecolor` for `emoji-truecolor.tlf`). The same
+rules apply to any other colored TLF that follows this convention.
 
-Each cell carries **two** color representations in a single SGR sequence:
-16-color codes for TOIlet and 256-color codes for Text\_Figlet.
+## Multi-layer SGR
+
+Each cell may carry up to **three** color representations in a single SGR
+sequence:
+
+- 16-color codes for TOIlet and 16-color fallback
+- compact 256-color codes for 256-color terminals
+- compact truecolor codes for 24-bit terminals
 
 ```
-\e[{fg16};{bg16};{fg256};{bg256}m
+\e[{fg16};{fg256_or_tc};{bg16};{bg256_or_tc}m
 ```
 
 - `{fg16}` / `{bg16}` — standard 16-color codes (`30–37`, `40–47`,
   `90–97`, `100–107`). TOIlet reads these; unknown codes are silently skipped.
-- `{fg256}` / `{bg256}` — compact 256-color codes (see below). Text\_Figlet
-  parses these for full-palette rendering.
+- `{fg256_or_tc}` / `{bg256_or_tc}` — **either** a compact 256-color code
+  **or** a compact truecolor code (see below). Each color uses at most one
+  extended layer. The parser determines whether it is foreground or background
+  from the preceding 16-color code.
 
-Either pair may be absent when a channel is unchanged (delta encoding) or when
-the 256-color index already matches its 16-color approximation exactly (color
-normalization).
+Any layer may be absent when a channel is unchanged (delta encoding) or when a
+more compact layer already represents the exact same color.
 
 ## Compact 256-color codes
 
 Instead of the verbose `38;5;N` and `48;5;N` sequences (7–9 characters each),
-256-color values are stored as single integers with an offset:
+256-color values are stored as single integers with a shared offset:
 
-| Channel    | Encoding  | Range   | Decoding           |
-|------------|-----------|---------|--------------------|
-| Foreground | `256 + N` | 256–511 | `fg = code - 256`  |
-| Background | `512 + N` | 512–767 | `bg = code - 512`  |
+| Encoding  | Range   | Decoding         |
+|-----------|---------|------------------|
+| `256 + N` | 256–511 | `idx = code - 256` |
+
+The same offset is used for **both** foreground and background. The parser
+determines the channel from the **preceding 16-color code** in the same SGR
+sequence (see [Context-based channel detection](#context-based-channel-detection)).
 
 TOIlet (libcaca) ignores codes >107, so these pass through harmlessly.
-Text\_Figlet decodes them in `Row::applySgrCode`:
 
-```php
-$code >= 256 && $code <= 511 => $fg = $code - 256,
-$code >= 512 && $code <= 767 => $bg = $code - 512,
-```
+## Compact truecolor codes
+
+For **stored** glyph data, verbose `38;2;R;G;B` and `48;2;R;G;B` sequences are
+usually avoided: they are long and expose intermediate SGR parameters (`38`,
+`48`, `2`) that TOIlet would see as extra numbers. Instead, fonts using this
+extension store truecolor as a single decimal integer with a shared offset:
+
+| Encoding      | Range              | Decoding             |
+|---------------|--------------------|----------------------|
+| `512 + bgr24` | 512–16,777,727     | `bgr24 = code - 512` |
+
+Where `bgr24 = (B << 16) | (G << 8) | R`.
+
+Decoding: `R = bgr24 & 0xFF`, `G = (bgr24 >> 8) & 0xFF`, `B = (bgr24 >> 16) & 0xFF`.
+
+The BGR channel order minimizes the decimal digit count: blue (the least
+significant channel in typical emoji palettes) occupies the high bits, keeping
+most codes shorter than the traditional RGB packing would.
+
+The same offset is used for **both** foreground and background. The parser
+determines the channel from context (see below).
+
+## Context-based channel detection
+
+Both compact 256-color codes (256–511) and compact truecolor codes (512+) use
+a **single** offset range for foreground and background. The parser tracks the
+most recent channel set by a standard 16-color SGR code:
+
+- Codes 30–37, 90–97 (foreground), SGR 1/22 (bold), SGR 39 (default fg)
+  → set context to **foreground**
+- Codes 40–47, 100–107 (background), SGR 49 (default bg)
+  → set context to **background**
+- SGR 0 (reset) → resets context to **foreground**
+
+When a compact code is encountered, it is assigned to the current context
+channel. Because the encoder always emits a 16-color code before any compact
+code for the same channel, the context is always set correctly.
+
+Encoders (e.g. the emoji builder) and the PHP parser normalize colors as follows:
+
+1. If the RGB value exactly matches one of the 16 base colors, emit only 16.
+2. Else if it exactly matches one of the 256 ANSI palette colors, emit `16 + 256`.
+3. Else emit `16 + truecolor` (the 256-color layer is omitted; the parser
+   computes the nearest 256-color index from the truecolor value at runtime).
+
+At runtime Text\_Figlet chooses the best layer in this order:
+
+1. truecolor
+2. 256-color (stored explicitly, or computed from truecolor via `nearestAnsi256`)
+3. 16-color
+
+Terminals that support truecolor receive standard ANSI output
+`38;2;R;G;B` / `48;2;R;G;B`; these verbose forms are generated only at render
+time, not stored in compact form in the font.
+
+### Verbose SGR in glyph lines
+
+When **parsing** TLF glyph lines, `Row` also accepts the usual verbose sequences
+`38;5;N` / `48;5;N` (256-color) and `38;2;R;G;B` / `48;2;R;G;B` (truecolor), not
+only the compact numeric codes. Hand-authored or other tool-generated TLF may use
+them; the emoji builder simply prefers compact storage for truecolor.
 
 ## Delta encoding
 
@@ -50,7 +121,7 @@ reset `\e[m` is emitted only when both colors return to "none".
 Example — two adjacent cells with different colors:
 
 ```
-\e[31;287;41;553m▄\e[32;288m▄
+\e[31;287;41;297m▄\e[32;288m▄
 ```
 
 The second cell shares the same background, so only the foreground codes are
@@ -63,7 +134,7 @@ half-block `▄` characters), the encoder emits `\e[7m` (reverse on) or
 `\e[27m` (reverse off) instead of re-specifying both colors:
 
 ```
-\e[31;287;42;554m▄\e[7m▄
+\e[31;287;42;298m▄\e[7m▄
 ```
 
 A single `7` or `27` replaces two full color specifications. TOIlet supports
@@ -91,7 +162,7 @@ terminal state is always clean at the start of a line, so the reset is
 redundant. The sequence starts directly with the color codes:
 
 ```
-\e[31;287;41;553m▄…
+\e[31;287;41;297m▄…
 ```
 
 ## Trailing decolorize
@@ -102,7 +173,7 @@ visual information. Their color attributes are stripped, so the line-ending
 
 ## Compression
 
-The TLF file is gzip-compressed (the `.tlf` extension is kept; Text\_Figlet
+The TLF file is gzip-compressed (the `.tlf` extension is kept; Text_Figlet
 detects gzip by magic bytes). When the `zopfli` Python package is available
 (`pip install zopfli`), it produces ~3–5% smaller output than standard gzip.
 The `mtime` field in the gzip header is zeroed for reproducible builds.
@@ -151,19 +222,19 @@ for 16-color downgrading:
 | 15    | White         | `(255, 255, 255)` |
 
 Keeping these in sync between the builder and the parser ensures that TOIlet
-and Text\_Figlet produce identical 16-color output.
+and Text_Figlet produce identical 16-color output.
 
-## Build pipeline
+## Reference build pipeline (emoji fonts)
 
 ```
 Emoji font (TTF/TTC)
   → Pillow renders each codepoint to a cropped PNG
-    → chafa converts PNG to 256-color ANSI (half-block art, 12×6 cells)
+    → chafa converts PNG to ANSI (half-block art, 12×6 cells; `--colors full` for truecolor builds)
       → Parser extracts (char, fg, bg) triples, resolving reverse video
-        → Color normalizer canonicalizes palette indices
-          → Encoder emits dual 16+256 SGR with delta/reverse/decolor
+        → Color normalizer canonicalizes exact 16/256 matches
+          → Encoder emits 16 + 256 + optional truecolor SGR
             → TLF assembler writes the font file
-              → Zopfli/gzip compresses to final emoji.tlf
+              → Zopfli/gzip compresses to final `emoji.tlf` / `emoji-truecolor.tlf`
 ```
 
 ## TOIlet compatibility
@@ -172,8 +243,8 @@ The format is designed to remain fully compatible with
 [TOIlet](http://caca.zoy.org/wiki/toilet) (libcaca):
 
 - TOIlet parses 16-color SGR codes (`30–47`, `90–107`) normally.
-- Compact 256-color codes (256+, 512+) fall outside libcaca's known range
-  and are silently ignored.
+- Compact 256-color codes (256+) and truecolor codes (512+) fall outside
+  libcaca's known range (0–107) and are silently ignored.
 - SGR 7/27 (reverse video) is supported natively by TOIlet.
 - Delta encoding is transparent: TOIlet applies each SGR incrementally,
   same as a full-reset sequence would.
@@ -228,3 +299,15 @@ parser picks up the new shade.
 compresses the regular `{fg16};{fg256}` pairs much more efficiently than
 the mixed patterns that result from sometimes omitting the 16-color code.
 After zopfli compression the font is ~3% **larger**.
+
+### CUF cursor positioning instead of trailing spaces
+
+Replacing trailing runs of spaces (e.g., in narrow placeholder glyphs) with
+CSI CUF sequences (`\e[nC`) to advance the cursor without emitting characters.
+libcaca's ANSI parser supports CUF, and the smushing algorithm works on the
+canvas (where CUF-skipped cells remain spaces), so compatibility is preserved.
+
+**Rejected:** Saves 1,224 raw bytes (612 lines × 2 bytes), but gzip
+compresses repeated spaces much more efficiently than `\e[nC` sequences.
+After zopfli, the font is ~70 bytes **larger**. The PHP parser supports CUF
+(`\e[nC` inserts n space cells) in case future fonts benefit from it.

@@ -96,7 +96,6 @@ final class ControlFileTest extends TestCase
     public function testMultiStage(): void
     {
         $controlFile = ControlFile::load($this->fixturePath('multistage.flc'));
-        // First stage: a-z -> A-Z, then Q -> ~
         $this->assertSame('~', $controlFile->apply('q'));
         $this->assertSame('~', $controlFile->apply('Q'));
         $this->assertSame('A', $controlFile->apply('a'));
@@ -203,9 +202,7 @@ final class ControlFileTest extends TestCase
     public function testHzModeDecode(): void
     {
         $controlFile = ControlFile::fromString("h\n");
-        // ~~ becomes ~
         $this->assertSame('~', $controlFile->apply('~~'));
-        // Regular ASCII passes through
         $this->assertSame('ABC', $controlFile->apply('ABC'));
     }
 
@@ -354,7 +351,6 @@ final class ControlFileTest extends TestCase
     public function testOnlyFirstRuleAppliesPerStage(): void
     {
         $controlFile = ControlFile::fromString("t A B\nt A C\n");
-        // First matching rule wins
         $this->assertSame('B', $controlFile->apply('A'));
     }
 
