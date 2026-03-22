@@ -184,6 +184,27 @@ The compact 256-color and truecolor ranges are Text_Figlet extensions. `toilet`
 continues to use only the 16-color subset and ignores the higher numeric codes.
 Standard TOIlet fonts are loaded as-is.
 
+### Emoji font example
+
+```php
+$figlet = new Figlet();
+$figlet->loadFont('emoji');                  // emoji.tlf — 16/256-color
+// $figlet->loadFont('emoji-truecolor');     // truecolor variant (24-bit terminals)
+
+echo $figlet->render("\u{2764}\u{1F525}\u{2B50}");  // ❤ 🔥 ⭐
+```
+
+### Resetting color detection mid-process
+
+The terminal tier is cached after the first call. If you change `TERM` or
+`COLORTERM` inside a long-running process (e.g. in tests), call:
+
+```php
+use Bolk\TextFiglet\AnsiColor;
+
+AnsiColor::resetCaches();
+```
+
 ## Bundled fonts
 
 The bundle includes 318 fonts:
