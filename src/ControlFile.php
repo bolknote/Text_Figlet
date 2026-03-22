@@ -375,17 +375,19 @@ final class ControlFile
 
     private function parseNumericValue(string $value): int
     {
-        if (str_starts_with($value, '0x') || str_starts_with($value, '0X')
-            || str_starts_with($value, '-0x') || str_starts_with($value, '-0X')) {
-            $neg = $value[0] === '-';
-            $hex = $neg ? substr($value, 3) : substr($value, 2);
-            $result = (int) hexdec($hex);
-            return $neg ? -$result : $result;
+        $negative = str_starts_with($value, '-');
+        $unsigned = $negative ? substr($value, 1) : $value;
+
+        if (str_starts_with($unsigned, '0x') || str_starts_with($unsigned, '0X')) {
+            $result = (int) hexdec(substr($unsigned, 2));
+            return $negative ? -$result : $result;
         }
-        if (preg_match('/^-?0[0-7]+$/', $value)) {
-            return (int) octdec($value);
+        if (preg_match('/^0[0-7]+$/', $unsigned)) {
+            $result = (int) octdec($unsigned);
+            return $negative ? -$result : $result;
         }
-        return (int) $value;
+        $result = (int) $unsigned;
+        return $negative ? -$result : $result;
     }
 
     private function parseCharsetDesignator(string $rest): int
@@ -425,32 +427,7 @@ final class ControlFile
     /** @return list<int> */
     private function decodeUTF8(string $str): array
     {
-        $codes = [];
-        $len = strlen($str);
-        for ($i = 0; $i < $len; $i++) {
-            $byte = ord($str[$i]);
-            if ($byte < 0x80) {
-                $codes[] = $byte;
-            } elseif (($byte & 0xE0) === 0xC0) {
-                $codePoint = ($byte & 0x1F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            } elseif (($byte & 0xF0) === 0xE0) {
-                $codePoint = ($byte & 0x0F) << 12;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            } elseif (($byte & 0xF8) === 0xF0) {
-                $codePoint = ($byte & 0x07) << 18;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 12;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            } else {
-                $codes[] = 128;
-            }
-        }
-        return $codes;
+        return Utf8Decoder::decode($str);
     }
 
     /** @return list<int> */

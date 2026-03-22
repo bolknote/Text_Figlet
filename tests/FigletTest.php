@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet\Tests;
 
+use RuntimeException;
 use Normalizer;
 use Bolk\TextFiglet\Cell;
 use Bolk\TextFiglet\ControlFile;
@@ -629,6 +630,34 @@ final class FigletTest extends TestCase
         $this->assertSame("\n", $figlet->render('☃'));
     }
 
+    public function testNegativeDecimalCodetagIsSkipped(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [
+                ['code' => '-1024', 'glyph' => 'X'],
+            ],
+        ), '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $this->assertNotContains(-1024, $figlet->getLoadedCodepoints());
+    }
+
+    public function testNegativeOctalCodetagIsSkipped(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(
+            codeTags: [
+                ['code' => '-02000', 'glyph' => 'X'],
+            ],
+        ), '.flf');
+
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        $this->assertNotContains(1024, $figlet->getLoadedCodepoints());
+    }
+
     public function testBlankCodetagLineIsIgnored(): void
     {
         $font = $this->buildSimpleFont() . "\n0x2603\nS~\n";
@@ -647,6 +676,42 @@ final class FigletTest extends TestCase
         $figlet->loadFont($fontPath);
 
         $this->assertSame("\n", $figlet->render('A'));
+    }
+
+    public function testMalformedUtf8InputDoesNotRaiseWarnings(): void
+    {
+        $fontPath = $this->writeTempFile($this->buildSimpleFont(), '.flf');
+        $figlet = new Figlet();
+        $figlet->loadFont($fontPath);
+
+        set_error_handler(static function (int $severity, string $message): never {
+            throw new RuntimeException($message, $severity);
+        });
+
+        try {
+            $this->assertSame("\n", $figlet->render("\xC2"));
+            $this->assertSame("\n", $figlet->render("\xF0\x9F\x9A"));
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testLoadFontFailurePreservesPreviousFontState(): void
+    {
+        $figlet = $this->loadedFiglet();
+        $expectedRender = $figlet->render('A');
+        $expectedName = $figlet->getFontName();
+        $expectedCodes = $figlet->getLoadedCodepoints();
+
+        try {
+            $figlet->loadFont('/definitely/missing/font.flf');
+            self::fail('Expected missing font exception was not thrown.');
+        } catch (FontNotFoundException) {
+        }
+
+        $this->assertSame($expectedName, $figlet->getFontName());
+        $this->assertSame($expectedCodes, $figlet->getLoadedCodepoints());
+        $this->assertSame($expectedRender, $figlet->render('A'));
     }
 
     // --- Layout mode derivation ---

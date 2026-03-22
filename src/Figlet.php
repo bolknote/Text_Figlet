@@ -6,8 +6,6 @@ namespace Bolk\TextFiglet;
 
 use Throwable;
 use ValueError;
-use FFI;
-use FFI\Exception as FFIException;
 use Normalizer;
 use ZipArchive;
 use Com\Tecnick\Unicode\Bidi;
@@ -138,7 +136,7 @@ final class Figlet
             return (int) $columns;
         }
 
-        $width = self::terminalWidthViaIoctl();
+        $width = TerminalWidthDetector::detectViaIoctl();
         if ($width > 0) {
             return $width;
         }
@@ -157,40 +155,6 @@ final class Figlet
 
         return 80;
     }
-
-    private static function terminalWidthViaIoctl(): int
-    {
-        if (!extension_loaded('ffi') || PHP_OS_FAMILY === 'Windows') {
-            return 0;
-        }
-
-        try {
-            $ffi = FFI::cdef(<<<'CDEF'
-                struct winsize {
-                    unsigned short ws_row;
-                    unsigned short ws_col;
-                    unsigned short ws_xpixel;
-                    unsigned short ws_ypixel;
-                };
-                int ioctl(int fd, unsigned long request, ...);
-                CDEF);
-
-            $win = $ffi->new('struct winsize');
-            $tiocgwinsz = PHP_OS_FAMILY === 'Linux' ? 0x5413 : 0x40087468;
-
-            // Probe terminal width via standard POSIX fds: stdout (1), stderr (2), stdin (0).
-            foreach ([1, 2, 0] as $fd) {
-                if ($ffi->ioctl($fd, $tiocgwinsz, FFI::addr($win)) !== -1 && $win->ws_col > 0) {
-                    return (int) $win->ws_col;
-                }
-            }
-        } catch (FFIException) {
-            return 0;
-        }
-
-        return 0;
-    }
-
     public function getFontName(): string
     {
         return $this->fontName;
@@ -262,57 +226,96 @@ final class Figlet
 
     public function loadFont(string $filename, bool $loadGerman = true): void
     {
-        $this->font = [];
-        $this->fontCharWidths = [];
-        $this->fontName = pathinfo($filename, PATHINFO_FILENAME);
+        $previousState = [
+            'height' => $this->height,
+            'baseline' => $this->baseline,
+            'oldLayout' => $this->oldLayout,
+            'fullLayout' => $this->fullLayout,
+            'codetagCount' => $this->codetagCount,
+            'printDirection' => $this->printDirection,
+            'hardblank' => $this->hardblank,
+            'isTlf' => $this->isTlf,
+            'font' => $this->font,
+            'fontCharWidths' => $this->fontCharWidths,
+            'fontComment' => $this->fontComment,
+            'hSmushRules' => $this->hSmushRules,
+            'vSmushRules' => $this->vSmushRules,
+            'hLayout' => $this->hLayout,
+            'vLayout' => $this->vLayout,
+            'fontName' => $this->fontName,
+        ];
 
-        if (!file_exists($filename)) {
-            $fontDir = __DIR__ . '/../fonts/';
+        try {
+            $this->font = [];
+            $this->fontCharWidths = [];
+            $this->fontName = pathinfo($filename, PATHINFO_FILENAME);
 
-            $resolved = $this->resolveFont($filename, $fontDir);
-            if ($resolved !== null) {
-                $filename = $resolved;
-            } else {
-                throw new FontNotFoundException(
-                    'Figlet font file "' . $filename . '" cannot be found'
-                );
+            if (!file_exists($filename)) {
+                $fontDir = __DIR__ . '/../fonts/';
+
+                $resolved = $this->resolveFont($filename, $fontDir);
+                if ($resolved !== null) {
+                    $filename = $resolved;
+                } else {
+                    throw new FontNotFoundException(
+                        'Figlet font file "' . $filename . '" cannot be found'
+                    );
+                }
             }
-        }
 
-        $this->fontComment = '';
+            $this->fontComment = '';
 
-        $stream = fopen($filename, 'rb');
-        if ($stream === false) {
-            throw new FontLoadException('Cannot open figlet font file ' . $filename);
-        }
-
-        $magic = fread($stream, 2);
-        fclose($stream);
-
-        if ($magic === "\x1f\x8b") {
-            if (!extension_loaded('zlib')) {
-                throw new FontLoadException(
-                    'Cannot load gzip compressed fonts: zlib extension is not available'
-                );
-            }
-            $stream = fopen('compress.zlib://' . $filename, 'rb');
-            if ($stream === false) {
-                throw new FontLoadException('Cannot open figlet font file ' . $filename);
-            }
-        } elseif ($magic === 'PK') {
-            $stream = $this->openZipFont($filename);
-        } else {
             $stream = fopen($filename, 'rb');
             if ($stream === false) {
                 throw new FontLoadException('Cannot open figlet font file ' . $filename);
             }
-            flock($stream, LOCK_SH);
-        }
 
-        try {
-            $this->parseFont($stream, $loadGerman);
-        } finally {
+            $magic = fread($stream, 2);
             fclose($stream);
+
+            if ($magic === "\x1f\x8b") {
+                if (!extension_loaded('zlib')) {
+                    throw new FontLoadException(
+                        'Cannot load gzip compressed fonts: zlib extension is not available'
+                    );
+                }
+                $stream = fopen('compress.zlib://' . $filename, 'rb');
+                if ($stream === false) {
+                    throw new FontLoadException('Cannot open figlet font file ' . $filename);
+                }
+            } elseif ($magic === 'PK') {
+                $stream = $this->openZipFont($filename);
+            } else {
+                $stream = fopen($filename, 'rb');
+                if ($stream === false) {
+                    throw new FontLoadException('Cannot open figlet font file ' . $filename);
+                }
+                flock($stream, LOCK_SH);
+            }
+
+            try {
+                $this->parseFont($stream, $loadGerman);
+            } finally {
+                fclose($stream);
+            }
+        } catch (Throwable $e) {
+            $this->height = $previousState['height'];
+            $this->baseline = $previousState['baseline'];
+            $this->oldLayout = $previousState['oldLayout'];
+            $this->fullLayout = $previousState['fullLayout'];
+            $this->codetagCount = $previousState['codetagCount'];
+            $this->printDirection = $previousState['printDirection'];
+            $this->hardblank = $previousState['hardblank'];
+            $this->isTlf = $previousState['isTlf'];
+            $this->font = $previousState['font'];
+            $this->fontCharWidths = $previousState['fontCharWidths'];
+            $this->fontComment = $previousState['fontComment'];
+            $this->hSmushRules = $previousState['hSmushRules'];
+            $this->vSmushRules = $previousState['vSmushRules'];
+            $this->hLayout = $previousState['hLayout'];
+            $this->vLayout = $previousState['vLayout'];
+            $this->fontName = $previousState['fontName'];
+            throw $e;
         }
     }
 
@@ -459,10 +462,11 @@ final class Figlet
                 continue;
             }
 
-            if (preg_match('/^-0x/i', $code)) {
+            $parsedCode = $this->parseCharCode($code);
+            if ($parsedCode < 0) {
                 $this->skipChar($stream);
             } else {
-                $this->loadCharFromFile($stream, $this->parseCharCode($code));
+                $this->loadCharFromFile($stream, $parsedCode);
             }
         }
     }
@@ -496,11 +500,15 @@ final class Figlet
 
     private function parseCharCode(string $code): int
     {
-        if (preg_match('/^0x/i', $code)) {
-            return (int) hexdec(substr($code, 2));
+        if (preg_match('/^-?0x/i', $code) === 1) {
+            $negative = $code[0] === '-';
+            $value = (int) hexdec(substr($code, $negative ? 3 : 2));
+            return $negative ? -$value : $value;
         }
-        if (($code[0] === '0' && $code !== '0') || str_starts_with($code, '-0')) {
-            return (int) octdec($code);
+        if (preg_match('/^-?0[0-7]+$/', $code) === 1) {
+            $negative = $code[0] === '-';
+            $value = (int) octdec($negative ? substr($code, 1) : $code);
+            return $negative ? -$value : $value;
         }
         return (int) $code;
     }
@@ -1162,39 +1170,7 @@ final class Figlet
     /** @return list<int> */
     private function splitString(string $str): array
     {
-        $codes = [];
-        $len = strlen($str);
-
-        for ($i = 0; $i < $len; $i++) {
-            if (substr($str, $i, 2) === '%u') {
-                $codes[] = (int) hexdec(substr($str, $i + 2, 4));
-                $i += 5;
-                continue;
-            }
-
-            $byte = ord($str[$i]);
-
-            if ($byte < 0x80) {
-                $codes[] = $byte;
-            } elseif (($byte & 0xE0) === 0xC0) {
-                $codePoint = ($byte & 0x1F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            } elseif (($byte & 0xF0) === 0xE0) {
-                $codePoint = ($byte & 0x0F) << 12;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            } elseif (($byte & 0xF8) === 0xF0) {
-                $codePoint = ($byte & 0x07) << 18;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 12;
-                $codePoint |= (ord($str[++$i]) & 0x3F) << 6;
-                $codePoint |= (ord($str[++$i]) & 0x3F);
-                $codes[] = $codePoint;
-            }
-        }
-
-        return $codes;
+        return Utf8Decoder::decode($str, true);
     }
 
     /**

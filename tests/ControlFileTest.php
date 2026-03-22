@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bolk\TextFiglet\Tests;
 
+use RuntimeException;
 use Override;
 use ZipArchive;
 use ReflectionMethod;
@@ -224,6 +225,31 @@ final class ControlFileTest extends TestCase
     {
         $controlFile = ControlFile::fromString('');
         $this->assertSame("\xC2\x80", $controlFile->apply("\xFF"));
+    }
+
+    public function testUtf8ModeHandlesTruncatedSequencesWithoutWarnings(): void
+    {
+        $controlFile = ControlFile::fromString('');
+
+        set_error_handler(static function (int $severity, string $message): never {
+            throw new RuntimeException($message, $severity);
+        });
+
+        try {
+            $this->assertSame("\xC2\x80", $controlFile->apply("\xC2"));
+            $this->assertSame("\xC2\x80", $controlFile->apply("\xF0\x9F\x9A"));
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testNegativeOctalNumericValuesAreParsedWithSign(): void
+    {
+        $controlFile = ControlFile::fromString("-0101 65\n");
+        $stages = $controlFile->getStages();
+
+        $this->assertSame(-65, $stages[0][0]['from']);
+        $this->assertSame(65, $stages[0][0]['to']);
     }
 
     #[RequiresPhpExtension('zlib')]
