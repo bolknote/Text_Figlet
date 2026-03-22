@@ -6,18 +6,21 @@ The font and control-file assets in this directory are collected from:
 - TOIlet official distribution (`http://caca.zoy.org/wiki/toilet`)
 - `cmatsuoka/figlet-fonts` (`https://github.com/cmatsuoka/figlet-fonts.git`)
 - [JavE FIGlet fonts](http://www.jave.de/figlet/fonts.html) (historical mirror where
-  shipped `*.flf` files were Zip archives; unpacked to plaintext FIGlet fonts here—see
-  `fonts/THIRD_PARTY.md` for the file list and notes)
+  shipped `*.flf` files were Zip archives; unpacked to plaintext FIGlet fonts here;
+  provenance in `fonts/THIRD_PARTY.md`; every file name in the “Complete inventory”
+  section at the end of this file)
 - `xero/figlet-fonts` (`https://github.com/xero/figlet-fonts`) (community collection;
-  see `fonts/THIRD_PARTY.md` for per-font source and license notes)
+  per-font notes in `fonts/THIRD_PARTY.md`; every file name in the “Complete inventory”
+  section at the end of this file)
 
 Only fonts with licensing that allows usage and redistribution in this
 repository are included.
 
 From the JavE mirror, `Georgia11.flf` and `georgi16.flf` were not imported: they
 trace the commercial Georgia typeface and lack the usual in-file JavE permission line.
-The full list of fonts added from that mirror is recorded in `fonts/THIRD_PARTY.md`
-under “JavE mirror archive (zip-wrapped bundle)”.
+Fonts added from that mirror are named in the “Complete inventory” section at the end
+of this file and grouped under “JavE mirror archive (zip-wrapped bundle)” in
+`fonts/THIRD_PARTY.md`.
 
 From `xero/figlet-fonts`, `Efti Italic.flf` was not imported: the file header states
 "(c) Michel Eftimakis 1995" with no redistribution permission. `Georgia11.flf` and
@@ -92,8 +95,8 @@ WTFPL v2 reference: `http://sam.zoy.org/wtfpl/COPYING`
 
 ---
 
-From JavE via `cmatsuoka/figlet-fonts` (`3d_diagonal.flf`, `B1FF.flf`,
-`ICL-1900.flf`, `ascii_new_roman.flf`, `bear.flf`, `bigfig.flf`,
+From JavE via `cmatsuoka/figlet-fonts` (`3d_diagonal.flf`, `b1ff.flf`,
+`icl-1900.flf`, `ascii_new_roman.flf`, `bear.flf`, `bigfig.flf`,
 `blocks.flf`, `braced.flf`, `broadway_kb.flf`, `cards.flf`, `chiseled.flf`,
 `cola.flf`, `crazy.flf`, `dancingfont.flf`, `dietcola.flf`,
 `doubleshorts.flf`, `filter.flf`, `fire_font-k.flf`, `fire_font-s.flf`,
@@ -230,9 +233,73 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 ---
 
 From `xero/figlet-fonts` — patorjk creations/conversions, Joan Stark ASCII art
-conversions, and other community fonts (see `fonts/THIRD_PARTY.md` for the full
-list and per-font notes):
+conversions, and other community fonts (file names in the “Complete inventory”
+section below; per-font notes in `fonts/THIRD_PARTY.md`):
 
 These fonts were shared by their authors in the ASCII-art and figlet communities
 without explicit restrictive licensing. They are collected in this repository in
 good faith under community redistribution practice. No warranty is provided.
+
+---
+
+Complete inventory (all bundled `.flf`, `.tlf`, and `.flc` files in this directory; 325 files)
+
+`1row.flf`, `3-d.flf`, `3d-ascii.flf`, `3d_diagonal.flf`, `3x5.flf`, `4max.flf`,
+`5lineoblique.flf`, `5x7.flf`, `6x10.flf`, `6x9.flf`, `b1ff.flf`, `danc4.flf`,
+`icl-1900.flf`, `acrobatic.flf`, `alligator.flf`, `alligator2.flf`, `alligator3.flf`,
+`alpha.flf`, `alphabet.flf`, `amc3line.flf`, `amc3liv1.flf`, `amcaaa01.flf`, `amcneko.flf`,
+`amcrazo2.flf`, `amcrazor.flf`, `amcslash.flf`, `amcslder.flf`, `amcthin.flf`,
+`amctubes.flf`, `amcun1.flf`, `ansi_regular.flf`, `ansi_shadow.flf`, `arrows.flf`,
+`ascii_new_roman.flf`, `avatar.flf`, `banner.flf`, `banner3-d.flf`, `banner3.flf`,
+`banner4.flf`, `barbwire.flf`, `basic.flf`, `bear.flf`, `bell.flf`, `benjamin.flf`,
+`bfraktur.tlf`, `big.flf`, `big_money-ne.flf`, `big_money-nw.flf`, `big_money-se.flf`,
+`big_money-sw.flf`, `bigchief.flf`, `bigfig.flf`, `binary.flf`, `block.flf`, `blocks.flf`,
+`bloody.flf`, `bolger.flf`, `braced.flf`, `bright.flf`, `broadway.flf`, `broadway_kb.flf`,
+`bubble.flf`, `bulbhead.flf`, `calgphy2.flf`, `caligraphy.flf`, `calvin_s.flf`, `cards.flf`,
+`catwalk.flf`, `chiseled.flf`, `chunky.flf`, `circle.tlf`, `coinstak.flf`, `cola.flf`,
+`colossal.flf`, `computer.flf`, `contessa.flf`, `contrast.flf`, `cosmic.flf`, `cosmike.flf`,
+`crawford.flf`, `crawford2.flf`, `crazy.flf`, `cricket.flf`, `cursive.flf`, `cyberlarge.flf`,
+`cybermedium.flf`, `cybersmall.flf`, `cygnet.flf`, `dancingfont.flf`, `decimal.flf`,
+`defleppard.flf`, `delta_corps_priest_1.flf`, `diamond.flf`, `dietcola.flf`, `digital.flf`,
+`doh.flf`, `doom.flf`, `dotmatrix.flf`, `double.flf`, `doubleshorts.flf`, `drpepper.flf`,
+`dwhistled.flf`, `eftichess.flf`, `eftifont.flf`, `eftipiti.flf`, `eftirobot.flf`,
+`eftitalic.flf`, `eftiwall.flf`, `eftiwater.flf`, `electronic.flf`, `elite.flf`,
+`emboss.tlf`, `emboss2.tlf`, `emoji.tlf`, `epic.flf`, `fauxcyrillic.tlf`, `fender.flf`,
+`filter.flf`, `fire_font-k.flf`, `fire_font-s.flf`, `flipped.flf`, `flowerpower.flf`,
+`fourtops.flf`, `fraktur.flf`, `frango.flc`, `fullcyrillic.tlf`, `funface.flf`,
+`funfaces.flf`, `future.tlf`, `fuzzy.flf`, `gb16fs.flf`, `ghost.flf`, `ghoulish.flf`,
+`glenyn.flf`, `goofy.flf`, `gothic.flf`, `graceful.flf`, `gradient.flf`, `graffiti.flf`,
+`greek.flf`, `halfiwi.flf`, `heart_left.flf`, `heart_right.flf`, `henry3d.flf`, `hex.flf`,
+`hieroglyphs.flf`, `hollywood.flf`, `horizontalleft.flf`, `horizontalright.flf`, `hz.flc`,
+`impossible.flf`, `invita.flf`, `isometric1.flf`, `isometric2.flf`, `isometric3.flf`,
+`isometric4.flf`, `italic.flf`, `ivrit.flf`, `jacky.flf`, `jazmine.flf`, `jerusalem.flf`,
+`jis0201.flc`, `js_block_letters.flf`, `js_bracket_letters.flf`, `js_capital_curves.flf`,
+`js_cursive.flf`, `js_stick_letters.flf`, `katakana.flf`, `kban.flf`, `keyboard.flf`,
+`knob.flf`, `koholint.flf`, `kompaktblk.flf`, `konto.flf`, `kontoslant.flf`, `larry3d.flf`,
+`lcd.flf`, `lean.flf`, `letter.tlf`, `letters.flf`, `lildevil.flf`, `lineblocks.flf`,
+`linux.flf`, `lockergnome.flf`, `lower.flc`, `madrid.flf`, `makisupa.flf`, `marquee.flf`,
+`maxfour.flf`, `maxiwi.flf`, `merlin1.flf`, `merlin2.flf`, `mike.flf`, `mini.flf`,
+`miniwi.flf`, `mirror.flf`, `mnemonic.flf`, `modular.flf`, `mono9.flf`, `morse.flf`,
+`moscow.flf`, `mshebrew210.flf`, `muzzle.flf`, `nancyj-fancy.flf`, `nancyj-underlined.flf`,
+`nancyj.flf`, `nipples.flf`, `nscript.flf`, `ntgreek.flf`, `null.flc`, `nvscript.flf`,
+`o8.flf`, `octal.flf`, `ogre.flf`, `oldbanner.flf`, `os2.flf`, `pagga.tlf`,
+`patorjk-hex.flf`, `patorjks_cheese.flf`, `pawp.flf`, `peaks.flf`, `peaksslant.flf`,
+`pebbles.flf`, `pepper.flf`, `poison.flf`, `puffy.flf`, `puzzle.flf`, `pyramid.flf`,
+`rammstein.flf`, `rectangles.flf`, `red_phoenix.flf`, `relief.flf`, `relief2.flf`,
+`reverse.flf`, `roman.flf`, `rot13.flc`, `rot13.flf`, `rotated.flf`, `rounded.flf`,
+`rowancap.flf`, `rozzo.flf`, `runic.flf`, `runyc.flf`, `s-relief.flf`, `santaclara.flf`,
+`sblood.flf`, `script.flf`, `serifcap.flf`, `shadow.flf`, `shimrod.flf`, `short.flf`,
+`six-fo.flf`, `slant.flf`, `slide.flf`, `slscript.flf`, `small.flf`, `small_shadow.flf`,
+`small_slant.flf`, `smallcaps.flf`, `smblock.tlf`, `smbraille.tlf`, `smisome1.flf`,
+`smkeyboard.flf`, `smpoison.flf`, `smscript.flf`, `smshadow.flf`, `smslant.flf`,
+`smtengwar.flf`, `soft.flf`, `speed.flf`, `spliff.flf`, `stacey.flf`, `stampate.flf`,
+`stampatello.flf`, `standard.flf`, `starstrips.flf`, `starwars.flf`, `stellar.flf`,
+`stencil.flf`, `stforek.flf`, `stick_letters.flf`, `stop.flf`, `straight.flf`,
+`stronger_than_all.flf`, `sub-zero.flf`, `swampland.flf`, `swan.flf`, `sweet.flf`,
+`tanja.flf`, `tengwar.flf`, `term.flf`, `terminus.flf`, `terminus_dots.flf`, `test1.flf`,
+`the_edge.flf`, `thick.flf`, `thin.flf`, `this.flf`, `thorned.flf`, `threepoint.flf`,
+`ticks.flf`, `ticksslant.flf`, `tiles.flf`, `tinker-toy.flf`, `tombstone.flf`, `train.flf`,
+`trek.flf`, `tsalagi.flf`, `tubes-regular.flf`, `tubes-smushed.flf`, `tubular.flf`,
+`twisted.flf`, `twopoint.flf`, `ublk.flf`, `univers.flf`, `upper.flc`, `usaflag.flf`,
+`utf8.flc`, `varsity.flf`, `wavy.flf`, `weird.flf`, `wetletter.flf`, `whimsy.flf`,
+`wideterm.tlf`, `wow.flf`.

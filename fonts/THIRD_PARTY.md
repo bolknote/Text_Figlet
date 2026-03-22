@@ -1,7 +1,10 @@
 # Third-party assets
 
 This file documents bundled fonts and control files, their source, and licensing note.
-Only redistributable assets are included.
+Only redistributable assets are included. A sorted list of every bundled `.flf`,
+`.tlf`, and `.flc` file is in [Complete inventory](#complete-inventory-all-bundled-files)
+at the end of this document (the same list appears under “Complete inventory” in
+`fonts/LICENSE`).
 
 ## FIGlet 2.2.5 bundle
 
@@ -67,7 +70,7 @@ assets with no standalone in-file license header in this form).
 ## JavE fonts
 
 Assets:
-`3d_diagonal.flf`, `B1FF.flf`, `ICL-1900.flf`, `ascii_new_roman.flf`,
+`3d_diagonal.flf`, `b1ff.flf`, `icl-1900.flf`, `ascii_new_roman.flf`,
 `bear.flf`, `bigfig.flf`, `blocks.flf`, `braced.flf`, `broadway_kb.flf`,
 `cards.flf`, `chiseled.flf`, `cola.flf`, `crazy.flf`, `dancingfont.flf`,
 `dietcola.flf`, `doubleshorts.flf`, `filter.flf`, `fire_font-k.flf`,
@@ -102,12 +105,12 @@ Assets (175 fonts from this import; control files `lower.flc`, `null.flc`,
 `1row.flf`, `3-d.flf`, `3x5.flf`, `4max.flf`, `5lineoblique.flf`, `acrobatic.flf`, `alligator.flf`,
 `alligator2.flf`, `alligator3.flf`, `alpha.flf`, `alphabet.flf`, `amc3line.flf`, `amc3liv1.flf`,
 `amcaaa01.flf`, `amcneko.flf`, `amcrazo2.flf`, `amcrazor.flf`, `amcslash.flf`, `amcslder.flf`,
-`amcthin.flf`, `amctubes.flf`, `amcun1.flf`, `arrows.flf`, `banner3-D.flf`, `banner3.flf`,
+`amcthin.flf`, `amctubes.flf`, `amcun1.flf`, `arrows.flf`, `banner3-d.flf`, `banner3.flf`,
 `banner4.flf`, `barbwire.flf`, `basic.flf`, `bell.flf`, `benjamin.flf`, `bigchief.flf`, `binary.flf`,
 `bolger.flf`, `bright.flf`, `broadway.flf`, `bulbhead.flf`, `calgphy2.flf`, `caligraphy.flf`,
 `catwalk.flf`, `chunky.flf`, `coinstak.flf`, `colossal.flf`, `computer.flf`, `contessa.flf`,
 `contrast.flf`, `cosmic.flf`, `cosmike.flf`, `crawford.flf`, `cricket.flf`, `cyberlarge.flf`,
-`cybermedium.flf`, `cybersmall.flf`, `cygnet.flf`, `DANC4.flf`, `decimal.flf`, `defleppard.flf`,
+`cybermedium.flf`, `cybersmall.flf`, `cygnet.flf`, `danc4.flf`, `decimal.flf`, `defleppard.flf`,
 `diamond.flf`, `doh.flf`, `dotmatrix.flf`, `double.flf`, `drpepper.flf`,
 `dwhistled.flf`, `eftichess.flf`, `eftifont.flf`, `eftipiti.flf`, `eftirobot.flf`, `eftitalic.flf`,
 `eftiwall.flf`, `eftiwater.flf`, `fender.flf`, `fourtops.flf`, `fraktur.flf`, `fuzzy.flf`,
@@ -255,8 +258,8 @@ Licensing note:
   redistribution restriction.
 - `crawford2.flf`: update of Crawford by patorjk (Jan 2008); original by Rowan Crawford
   from alt.ascii-art, no explicit restriction.
-- `big_money-ne/nw/se/sw.flf`: no license header; widely redistributed in figlet
-  community.
+- `big_money-ne.flf`, `big_money-nw.flf`, `big_money-se.flf`, `big_money-sw.flf`: no
+  license header; widely redistributed in figlet community.
 - `halfiwi.flf`, `maxiwi.flf`, `miniwi.flf`: based on the miniwi bitmap font
   (`https://github.com/sshbio/miniwi`); published without a license file, shared
   publicly on GitHub.
@@ -265,3 +268,65 @@ Licensing note:
 - `stencil.flf`: by Subskybox (subskybox@gmail.com); shared without restriction.
 - `tubes-regular.flf`, `tubes-smushed.flf`: by Phantomwise; created with patorjk.com's
   FIGfont editor, shared without restriction.
+
+## Complete inventory (all bundled files)
+
+`1row.flf`, `3-d.flf`, `3d-ascii.flf`, `3d_diagonal.flf`, `3x5.flf`, `4max.flf`,
+`5lineoblique.flf`, `5x7.flf`, `6x10.flf`, `6x9.flf`, `b1ff.flf`, `danc4.flf`,
+`icl-1900.flf`, `acrobatic.flf`, `alligator.flf`, `alligator2.flf`, `alligator3.flf`,
+`alpha.flf`, `alphabet.flf`, `amc3line.flf`, `amc3liv1.flf`, `amcaaa01.flf`, `amcneko.flf`,
+`amcrazo2.flf`, `amcrazor.flf`, `amcslash.flf`, `amcslder.flf`, `amcthin.flf`,
+`amctubes.flf`, `amcun1.flf`, `ansi_regular.flf`, `ansi_shadow.flf`, `arrows.flf`,
+`ascii_new_roman.flf`, `avatar.flf`, `banner.flf`, `banner3-d.flf`, `banner3.flf`,
+`banner4.flf`, `barbwire.flf`, `basic.flf`, `bear.flf`, `bell.flf`, `benjamin.flf`,
+`bfraktur.tlf`, `big.flf`, `big_money-ne.flf`, `big_money-nw.flf`, `big_money-se.flf`,
+`big_money-sw.flf`, `bigchief.flf`, `bigfig.flf`, `binary.flf`, `block.flf`, `blocks.flf`,
+`bloody.flf`, `bolger.flf`, `braced.flf`, `bright.flf`, `broadway.flf`, `broadway_kb.flf`,
+`bubble.flf`, `bulbhead.flf`, `calgphy2.flf`, `caligraphy.flf`, `calvin_s.flf`, `cards.flf`,
+`catwalk.flf`, `chiseled.flf`, `chunky.flf`, `circle.tlf`, `coinstak.flf`, `cola.flf`,
+`colossal.flf`, `computer.flf`, `contessa.flf`, `contrast.flf`, `cosmic.flf`, `cosmike.flf`,
+`crawford.flf`, `crawford2.flf`, `crazy.flf`, `cricket.flf`, `cursive.flf`, `cyberlarge.flf`,
+`cybermedium.flf`, `cybersmall.flf`, `cygnet.flf`, `dancingfont.flf`, `decimal.flf`,
+`defleppard.flf`, `delta_corps_priest_1.flf`, `diamond.flf`, `dietcola.flf`, `digital.flf`,
+`doh.flf`, `doom.flf`, `dotmatrix.flf`, `double.flf`, `doubleshorts.flf`, `drpepper.flf`,
+`dwhistled.flf`, `eftichess.flf`, `eftifont.flf`, `eftipiti.flf`, `eftirobot.flf`,
+`eftitalic.flf`, `eftiwall.flf`, `eftiwater.flf`, `electronic.flf`, `elite.flf`,
+`emboss.tlf`, `emboss2.tlf`, `emoji.tlf`, `epic.flf`, `fauxcyrillic.tlf`, `fender.flf`,
+`filter.flf`, `fire_font-k.flf`, `fire_font-s.flf`, `flipped.flf`, `flowerpower.flf`,
+`fourtops.flf`, `fraktur.flf`, `frango.flc`, `fullcyrillic.tlf`, `funface.flf`,
+`funfaces.flf`, `future.tlf`, `fuzzy.flf`, `gb16fs.flf`, `ghost.flf`, `ghoulish.flf`,
+`glenyn.flf`, `goofy.flf`, `gothic.flf`, `graceful.flf`, `gradient.flf`, `graffiti.flf`,
+`greek.flf`, `halfiwi.flf`, `heart_left.flf`, `heart_right.flf`, `henry3d.flf`, `hex.flf`,
+`hieroglyphs.flf`, `hollywood.flf`, `horizontalleft.flf`, `horizontalright.flf`, `hz.flc`,
+`impossible.flf`, `invita.flf`, `isometric1.flf`, `isometric2.flf`, `isometric3.flf`,
+`isometric4.flf`, `italic.flf`, `ivrit.flf`, `jacky.flf`, `jazmine.flf`, `jerusalem.flf`,
+`jis0201.flc`, `js_block_letters.flf`, `js_bracket_letters.flf`, `js_capital_curves.flf`,
+`js_cursive.flf`, `js_stick_letters.flf`, `katakana.flf`, `kban.flf`, `keyboard.flf`,
+`knob.flf`, `koholint.flf`, `kompaktblk.flf`, `konto.flf`, `kontoslant.flf`, `larry3d.flf`,
+`lcd.flf`, `lean.flf`, `letter.tlf`, `letters.flf`, `lildevil.flf`, `lineblocks.flf`,
+`linux.flf`, `lockergnome.flf`, `lower.flc`, `madrid.flf`, `makisupa.flf`, `marquee.flf`,
+`maxfour.flf`, `maxiwi.flf`, `merlin1.flf`, `merlin2.flf`, `mike.flf`, `mini.flf`,
+`miniwi.flf`, `mirror.flf`, `mnemonic.flf`, `modular.flf`, `mono9.flf`, `morse.flf`,
+`moscow.flf`, `mshebrew210.flf`, `muzzle.flf`, `nancyj-fancy.flf`, `nancyj-underlined.flf`,
+`nancyj.flf`, `nipples.flf`, `nscript.flf`, `ntgreek.flf`, `null.flc`, `nvscript.flf`,
+`o8.flf`, `octal.flf`, `ogre.flf`, `oldbanner.flf`, `os2.flf`, `pagga.tlf`,
+`patorjk-hex.flf`, `patorjks_cheese.flf`, `pawp.flf`, `peaks.flf`, `peaksslant.flf`,
+`pebbles.flf`, `pepper.flf`, `poison.flf`, `puffy.flf`, `puzzle.flf`, `pyramid.flf`,
+`rammstein.flf`, `rectangles.flf`, `red_phoenix.flf`, `relief.flf`, `relief2.flf`,
+`reverse.flf`, `roman.flf`, `rot13.flc`, `rot13.flf`, `rotated.flf`, `rounded.flf`,
+`rowancap.flf`, `rozzo.flf`, `runic.flf`, `runyc.flf`, `s-relief.flf`, `santaclara.flf`,
+`sblood.flf`, `script.flf`, `serifcap.flf`, `shadow.flf`, `shimrod.flf`, `short.flf`,
+`six-fo.flf`, `slant.flf`, `slide.flf`, `slscript.flf`, `small.flf`, `small_shadow.flf`,
+`small_slant.flf`, `smallcaps.flf`, `smblock.tlf`, `smbraille.tlf`, `smisome1.flf`,
+`smkeyboard.flf`, `smpoison.flf`, `smscript.flf`, `smshadow.flf`, `smslant.flf`,
+`smtengwar.flf`, `soft.flf`, `speed.flf`, `spliff.flf`, `stacey.flf`, `stampate.flf`,
+`stampatello.flf`, `standard.flf`, `starstrips.flf`, `starwars.flf`, `stellar.flf`,
+`stencil.flf`, `stforek.flf`, `stick_letters.flf`, `stop.flf`, `straight.flf`,
+`stronger_than_all.flf`, `sub-zero.flf`, `swampland.flf`, `swan.flf`, `sweet.flf`,
+`tanja.flf`, `tengwar.flf`, `term.flf`, `terminus.flf`, `terminus_dots.flf`, `test1.flf`,
+`the_edge.flf`, `thick.flf`, `thin.flf`, `this.flf`, `thorned.flf`, `threepoint.flf`,
+`ticks.flf`, `ticksslant.flf`, `tiles.flf`, `tinker-toy.flf`, `tombstone.flf`, `train.flf`,
+`trek.flf`, `tsalagi.flf`, `tubes-regular.flf`, `tubes-smushed.flf`, `tubular.flf`,
+`twisted.flf`, `twopoint.flf`, `ublk.flf`, `univers.flf`, `upper.flc`, `usaflag.flf`,
+`utf8.flc`, `varsity.flf`, `wavy.flf`, `weird.flf`, `wetletter.flf`, `whimsy.flf`,
+`wideterm.tlf`, `wow.flf`.
