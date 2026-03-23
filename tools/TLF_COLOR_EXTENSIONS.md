@@ -94,7 +94,7 @@ Encoders (e.g. the emoji builder) and the PHP parser normalize colors as follows
 3. Else emit `16 + truecolor` (the 256-color layer is omitted; the parser
    computes the nearest 256-color index from the truecolor value at runtime).
 
-At runtime Text\_Figlet chooses the best layer in this order:
+At runtime Text_Figlet chooses the best layer in this order:
 
 1. truecolor
 2. 256-color (stored explicitly, or computed from truecolor via `nearestAnsi256`)
@@ -241,6 +241,12 @@ Emoji font (TTF/TTC)
 
 The format is designed to remain fully compatible with
 [TOIlet](http://caca.zoy.org/wiki/toilet) (libcaca):
+
+**TOIlet** uses libcaca for terminal output; libcaca applies only the
+**16-color** ANSI model (`30–37`, `40–47`, `90–97`, `100–107`). Compact
+256-color and truecolor codes are ignored, so toilet/libcaca show **only** the
+16-color appearance implied by those standard SGR codes — the same layer
+Text_Figlet uses when rendering in 16-color mode.
 
 - TOIlet parses 16-color SGR codes (`30–47`, `90–107`) normally.
 - Compact 256-color codes (256+) and truecolor codes (512+) fall outside
