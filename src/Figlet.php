@@ -14,7 +14,7 @@ use Bolk\TextFiglet\Exception\FontNotFoundException;
 
 final class Figlet
 {
-    public const string VERSION = '2.8.0';
+    public const string VERSION = '2.8.1';
 
     protected int $height = 0;
     protected int $baseline = 0;
@@ -363,10 +363,11 @@ final class Figlet
             throw new FontLoadException('Cannot open figlet font file ' . $filename);
         }
 
-        $name = $zip->getNameIndex(0);
+        $base = pathinfo($filename, PATHINFO_FILENAME);
+        $name = ZipMember::selectName($zip, [$base . '.flf', $base . '.tlf']);
         $zip->close();
 
-        if ($name === false) {
+        if ($name === null) {
             throw new FontLoadException('ZIP archive is empty: ' . $filename);
         }
 

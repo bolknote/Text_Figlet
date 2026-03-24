@@ -141,7 +141,7 @@ $figlet->setWidth(Figlet::terminalWidth());
 echo $figlet->render('Adapts to your terminal');
 ```
 
-`Figlet::terminalWidth()` checks the `COLUMNS` environment variable, falls back to `tput cols`, and defaults to 80.
+`Figlet::terminalWidth()` checks `COLUMNS`, then TTY width via `ioctl`, then `tput cols`, then `stty size`, and defaults to 80.
 
 ## HTML output
 
@@ -174,10 +174,11 @@ numeric codes above.
 
 Details: `tools/TLF_COLOR_EXTENSIONS.md`.
 
-For colored fonts the library chooses the best output tier at runtime:
+For colored fonts the library chooses the best output tier at runtime (first match wins):
 
 - `COLORTERM=truecolor` or `COLORTERM=24bit` → emit `38;2;R;G;B` / `48;2;R;G;B`
-- `TERM=*256color` → emit `38;5;N` / `48;5;N`
+- `TERM_FEATURES` → truecolor when [iTerm2-style feature reporting](https://www.iterm2.com/feature-reporting) advertises 24-bit color (non-zero low bits in the `T` level bitmap)
+- `TERM` contains `256color` → emit `38;5;N` / `48;5;N`
 - otherwise → fall back to base-16 ANSI colors
 
 The compact 256-color and truecolor ranges are Text_Figlet extensions. `toilet`
@@ -196,8 +197,8 @@ echo $figlet->render("\u{2764}\u{1F525}\u{2B50}");  // ❤ 🔥 ⭐
 
 ### Resetting color detection mid-process
 
-The terminal tier is cached after the first call. If you change `TERM` or
-`COLORTERM` inside a long-running process (e.g. in tests), call:
+The terminal tier is cached after the first call. If you change `TERM`,
+`COLORTERM`, or `TERM_FEATURES` inside a long-running process (e.g. in tests), call:
 
 ```php
 use Bolk\TextFiglet\AnsiColor;
@@ -219,9 +220,11 @@ See `fonts/THIRD_PARTY.md` for the complete asset list and licensing notes.
 
 Bundled control files: `utf8.flc`, `hz.flc`, `frango.flc`, `jis0201.flc`.
 
-## Compressed fonts
+## Compressed fonts and control files
 
-Gzip (`.flf.gz`, requires `ext-zlib`) and ZIP-compressed fonts (requires `ext-zip`) are supported transparently.
+Gzip is detected by the `\x1f\x8b` magic bytes for both fonts and `.flc` control files, not only by a `.gz` suffix (requires `ext-zlib`). Short font names without an extension are still resolved with `.flf.gz` / `.tlf.gz` in addition to `.flf` / `.tlf`.
+
+ZIP archives are detected by the `PK` signature (requires `ext-zip`). If the archive has several members, a file named like the archive basename (`archive.flf`, `archive.tlf`, or `archive.flc`) is preferred; otherwise the first non-directory entry is used (FIGlet itself, via [zipio.c](https://github.com/cmatsuoka/figlet/blob/master/zipio.c), only reads that first local file record—no name-based lookup). TOIlet loads fonts through libcaca (`caca_canvas_set_figfont`); ZIP handling, if any, lives there—not in TOIlet’s own `src/`.
 
 ## FIGlet standard compliance
 

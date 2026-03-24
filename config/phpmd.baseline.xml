@@ -8,4 +8,5 @@
   <violation rule="PHPMD\Rule\Design\LongMethod" file="src/Row.php" method="parseSgr"/>
   <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="vSmushChar"/>
   <violation rule="PHPMD\Rule\Design\NpathComplexity" file="src/SmushEngine.php" method="applyHSmushRules"/>
+  <violation rule="PHPMD\Rule\Design\CouplingBetweenObjects" file="src/Figlet.php"/>
 </phpmd-baseline>

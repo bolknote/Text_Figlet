@@ -260,10 +260,38 @@ final class ControlFileTest extends TestCase
         $this->assertSame('B', $controlFile->apply('A'));
     }
 
+    #[RequiresPhpExtension('zlib')]
+    public function testGzipControlFileDetectedByMagicBytesNotExtension(): void
+    {
+        $encoded = gzencode("t A B\n");
+        self::assertNotFalse($encoded);
+        $path = $this->writeTempFile($encoded, '.flc');
+
+        $controlFile = ControlFile::load($path);
+        $this->assertSame('B', $controlFile->apply('A'));
+    }
+
     #[RequiresPhpExtension('zip')]
     public function testLoadZipCompressedControlFile(): void
     {
         $path = $this->writeZipArchive("t A B\n");
+
+        $controlFile = ControlFile::load($path);
+        $this->assertSame('B', $controlFile->apply('A'));
+    }
+
+    #[RequiresPhpExtension('zip')]
+    public function testZipControlFileSelectsMemberMatchingArchiveBasename(): void
+    {
+        $base = 'ctlzip_' . str_replace('.', '_', uniqid('', true));
+        $path = sys_get_temp_dir() . '/' . $base . '.zip';
+        $this->tempPaths[] = $path;
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true);
+        $zip->addFromString('noise.txt', 'not a control file');
+        $zip->addFromString($base . '.flc', "t A B\n");
+        $zip->close();
 
         $controlFile = ControlFile::load($path);
         $this->assertSame('B', $controlFile->apply('A'));

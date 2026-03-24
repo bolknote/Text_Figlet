@@ -534,6 +534,30 @@ final class FigletTest extends TestCase
     }
 
     #[RequiresPhpExtension('zip')]
+    public function testZipFontSelectsMemberMatchingArchiveBasename(): void
+    {
+        $font = $this->buildSimpleFont();
+        $base = 'zipfont_' . str_replace('.', '_', uniqid('', true));
+        $path = sys_get_temp_dir() . '/' . $base . '.zip';
+        $this->tempPaths[] = $path;
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true);
+        $zip->addFromString('noise.txt', 'not a font');
+        $zip->addFromString($base . '.flf', $font);
+        $zip->close();
+
+        $plainPath = $this->writeTempFile($font, '.flf');
+        $plain = new Figlet();
+        $plain->loadFont($plainPath);
+
+        $compressed = new Figlet();
+        $compressed->loadFont($path);
+
+        $this->assertSame($plain->render('AB'), $compressed->render('AB'));
+    }
+
+    #[RequiresPhpExtension('zip')]
     public function testEmptyZipArchiveThrows(): void
     {
         $zipPath = $this->writeTempFile("PK\x05\x06" . str_repeat("\x00", 18), '.zip');

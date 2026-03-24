@@ -897,7 +897,14 @@ final class ControlFile
     /** @return resource */
     private static function openStream(string $filename)
     {
-        if (str_ends_with($filename, '.gz')) {
+        $stream = fopen($filename, 'rb');
+        if ($stream === false) {
+            throw new ControlFileException('Cannot read control file ' . $filename);
+        }
+
+        $magic = fread($stream, 2);
+        if ($magic === "\x1f\x8b") {
+            fclose($stream);
             if (!extension_loaded('zlib')) {
                 throw new ControlFileException(
                     'Cannot load gzip compressed control files: zlib extension is not available'
@@ -912,12 +919,6 @@ final class ControlFile
             return $stream;
         }
 
-        $stream = fopen($filename, 'rb');
-        if ($stream === false) {
-            throw new ControlFileException('Cannot read control file ' . $filename);
-        }
-
-        $magic = fread($stream, 2);
         if ($magic !== 'PK') {
             rewind($stream);
             return $stream;
@@ -942,10 +943,11 @@ final class ControlFile
             throw new ControlFileException('Cannot read control file ' . $filename);
         }
 
-        $name = $zip->getNameIndex(0);
+        $base = pathinfo($filename, PATHINFO_FILENAME);
+        $name = ZipMember::selectName($zip, [$base . '.flc']);
         $zip->close();
 
-        if ($name === false) {
+        if ($name === null) {
             throw new ControlFileException('ZIP archive is empty: ' . $filename);
         }
 
